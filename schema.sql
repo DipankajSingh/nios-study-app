@@ -4,7 +4,7 @@
 -- ============================================================
 -- CATALOG (read-only, seeded from content pipeline)
 -- ============================================================
-
+--Might need to change in future--
 CREATE TABLE IF NOT EXISTS Subject (
   id           TEXT PRIMARY KEY,
   name         TEXT NOT NULL,
