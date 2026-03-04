@@ -32,3 +32,9 @@ Thumbs.db
 
 # exclude content if you prefer to regenerate (optional)
 # content/**
+
+# Sensitive and runtime files in scripts
+scripts/credentials.json
+scripts/token.json
+scripts/__pycache__/
+scripts/venv/
