@@ -1,35 +1,43 @@
 [
     {
-        "name": "Hindi (301)-New (effective from session:\n2023-24)",
+        "name": "Geography\u00a0(316)-New (effective from session: 2023-24)",
+        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/geography-(316)-new.aspx"
+    },
+    {
+        "name": "Psychology\u00a0(328)-New (effective from session: 2023-24)",
+        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/psychology-(328)-new.aspx"
+    },
+    {
+        "name": "Painting\u00a0(332)-New (effective from session: 2023-24)",
+        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/painting-(332)-new.aspx"
+    },
+    {
+        "name": "Environmental Science\u00a0\u00a0(333)",
+        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/enviornmental-science-(333).aspx"
+    },
+    {
+        "name": "Library & Information Science (339)",
+        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/library-and-information-science.aspx"
+    },
+    {
+        "name": "Basics of Transportation\u00a0(379)",
+        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/basics-of-transportation-(379).aspx"
+    },
+    {
+        "name": "Krishi : Production, Processing and Marketing (383)",
+        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/krishi-(383).aspx"
+    },
+    {
+        "name": "\u092d\u093e\u0930\u0924\u0940\u092f \u091c\u094d\u091e\u093e\u0928 \u092a\u0930\u0902\u092a\u0930\u093e (345-348)",
+        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/bgp.aspx"
+    },
+    {
+        "name": "Hindi (301)-New (effective from session: 2023-24)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/hindi-(301)-new.aspx"
     },
     {
-        "name": "English (302)-New (effective from session:\n2025-26)",
+        "name": "English (302)-New (effective from session: 2025-26)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/english-(302)-new.aspx"
-    },
-    {
-        "name": "Bengali (303)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/Bengali-(303).aspx"
-    },
-    {
-        "name": "Odia (305)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/odia-(305).aspx"
-    },
-    {
-        "name": "Tamil (304)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/tamil-(304).aspx"
-    },
-    {
-        "name": "Urdu (306)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/Urdu-(306).aspx"
-    },
-    {
-        "name": "Sanskrit (309)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/Sanskrit-(309).aspx"
-    },
-    {
-        "name": "Punjabi (310)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/punjabi-(310).aspx"
     },
     {
         "name": "Mathematics (311)",
@@ -52,10 +60,6 @@
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/History-(315).aspx"
     },
     {
-        "name": "Geography\u00a0(316)-New (effective from session:\n2023-24)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/geography-(316)-new.aspx"
-    },
-    {
         "name": "Political Science (317)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/political-science-(317).aspx"
     },
@@ -64,7 +68,7 @@
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/Economics-(318).aspx"
     },
     {
-        "name": "Business Studies (319)-New (effective from\nsession: 2023-24)",
+        "name": "Business Studies (319)-New (effective from session: 2023-24)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/business-studies-(319)-new.aspx"
     },
     {
@@ -76,20 +80,12 @@
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/Home-Science-(321).aspx"
     },
     {
-        "name": "Psychology\u00a0(328)-New (effective from session:\n2023-24)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/psychology-(328)-new.aspx"
-    },
-    {
         "name": "Computer Science (330)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/Computer-Science-(330).aspx"
     },
     {
         "name": "Sociology (331)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/Sociology-(331).aspx"
-    },
-    {
-        "name": "Painting\u00a0(332)-New (effective from session:\n2023-24)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/painting-(332)-new.aspx"
     },
     {
         "name": "Mass Communications (335)",
@@ -100,10 +96,6 @@
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/Data-Entry-Operations-(336).aspx"
     },
     {
-        "name": "Environmental Science\u00a0\u00a0(333)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/enviornmental-science-(333).aspx"
-    },
-    {
         "name": "Tourism (337)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/tourism-337.aspx"
     },
@@ -112,44 +104,16 @@
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/introduction-to-law.aspx"
     },
     {
-        "name": "Library & Information Science (339)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/library-and-information-science.aspx"
-    },
-    {
-        "name": "Arabic (341)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/arabic_341.aspx"
-    },
-    {
         "name": "Gender Studies (340)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/gender-studies-(340).aspx"
-    },
-    {
-        "name": "PERSIAN (342)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/persian-(342).aspx"
-    },
-    {
-        "name": "Malayalam (343)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/malayalam-(343).aspx"
-    },
-    {
-        "name": "SINDHI (344)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/sindhi-(344).aspx"
     },
     {
         "name": "Veda Adhyayan (345)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/veda-adhyayan-(345).aspx"
     },
     {
-        "name": "Sanskrit Vyakarana (346)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/sanskrit-vyakarana-(346).aspx"
-    },
-    {
         "name": "Bharatiya Darshan (347)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/bharatiya-darshan-(347).aspx"
-    },
-    {
-        "name": "Sanskrit Sahitya (348)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/sanskrit-sahitya-(348).aspx"
     },
     {
         "name": "Employability (350)",
@@ -168,7 +132,7 @@
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/physical-education-(373).aspx"
     },
     {
-        "name": "Early Childhood Care And Education\n(376)",
+        "name": "Early Childhood Care And Education (376)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/early-childhood-care-and-education-376.aspx"
     },
     {
@@ -176,7 +140,7 @@
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/natyakala-(385).aspx"
     },
     {
-        "name": "Transportation and Warehouse Management\n(377)",
+        "name": "Transportation and Warehouse Management (377)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/transportation-and-warehouse-management-(377).aspx"
     },
     {
@@ -184,39 +148,7 @@
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/inventory-management-(378).aspx"
     },
     {
-        "name": "Basics of\nTransportation\u00a0(379)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/basics-of-transportation-(379).aspx"
-    },
-    {
-        "name": "Bhoti Language (380)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/bhoti-language-(380).aspx"
-    },
-    {
         "name": "Bodh Darshan (381)",
         "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/bodh-darshan-(381).aspx"
-    },
-    {
-        "name": "Krishi : Production, Processing and Marketing\n(383)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/krishi-(383).aspx"
-    },
-    {
-        "name": "\u092d\u093e\u0930\u0924\u0940\u092f\n\u091c\u094d\u091e\u093e\u0928 \u092a\u0930\u0902\u092a\u0930\u093e (345-348)",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/bgp.aspx"
-    },
-    {
-        "name": "Regional Languages Course Material",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/sr_secondary_regional_language_course_material.aspx"
-    },
-    {
-        "name": "Gujarati Medium",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/gujarati_medium_srsecondary.aspx"
-    },
-    {
-        "name": "Bengali Medium",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/bengali_medium_srsecondary.aspx"
-    },
-    {
-        "name": "Urdu Medium",
-        "url": "https://nios.ac.in/online-course-material/sr-secondary-courses/urdu_medium_srsecondary.aspx"
     }
 ]
