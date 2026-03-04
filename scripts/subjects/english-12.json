@@ -1,0 +1,34 @@
+{
+    "id": "english-12",
+    "name": "English",
+    "classLevel": "12",
+    "subjectCode": "302",
+    "icon": "📖",
+    "description": "Reading comprehension, writing skills, grammar, literature — Class 12 NIOS English.",
+    "books": [
+        {
+            "bookNumber": 1,
+            "label": "Complete Book",
+            "pdf": "~/Downloads/nios/english-12.pdf",
+            "chapters": [
+                "The Crow and the Deer",
+                "Mary Kom's Interview",
+                "An Astrologer's Day",
+                "Bholi",
+                "Ecology and Environment",
+                "After Twenty Years",
+                "The Necklace",
+                "Three Questions",
+                "Of Studies",
+                "Night of the Scorpion",
+                "Where The Mind Is Without Fear",
+                "Face-to-Face Communication",
+                "Appearing for an Interview",
+                "Letter Writing",
+                "Essay Writing",
+                "Active and Passive Voice",
+                "Direct and Indirect Speech"
+            ]
+        }
+    ]
+}

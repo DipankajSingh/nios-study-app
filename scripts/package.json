@@ -1,0 +1,25 @@
+{
+    "name": "nios-content-pipeline",
+    "version": "1.0.0",
+    "description": "NIOS study app content pipeline — PDF ingestion, AI generation, DB seeding",
+    "scripts": {
+        "ingest": "ts-node ingest.ts",
+        "generate-content": "ts-node generateContent.ts",
+        "ingest-pyqs": "ts-node ingestPyqs.ts",
+        "seed": "ts-node seed.ts"
+    },
+    "dependencies": {
+        "@google/genai": "^1.43.0",
+        "@google/generative-ai": "^0.21.0",
+        "cheerio": "^1.2.0",
+        "dotenv": "^16.6.1",
+        "groq-sdk": "^0.37.0",
+        "pdf-parse": "^1.1.4"
+    },
+    "devDependencies": {
+        "@types/node": "^22.19.13",
+        "@types/pdf-parse": "^1.1.5",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.9.3"
+    }
+}

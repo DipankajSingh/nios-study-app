@@ -1,0 +1,82 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* Typography */
+  --font: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Color palette */
+  --bg:        #060b18;
+  --bg-card:   rgba(12, 20, 40, 0.92);
+  --bg-glass:  rgba(255, 255, 255, 0.04);
+  --border:    rgba(255, 255, 255, 0.08);
+  --border-hi: rgba(99, 179, 237, 0.5);
+
+  --text-primary:   #f0f4ff;
+  --text-secondary: #8da4c4;
+  --text-muted:     #4d6080;
+
+  /* Brand gradient */
+  --grad-primary: linear-gradient(135deg, #38bdf8 0%, #6366f1 100%);
+  --grad-green:   linear-gradient(135deg, #34d399 0%, #059669 100%);
+  --grad-amber:   linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
+  --grad-rose:    linear-gradient(135deg, #fb7185 0%, #e11d48 100%);
+
+  /* Subject accent colours */
+  --clr-maths:   #38bdf8;
+  --clr-english: #a78bfa;
+  --clr-science: #34d399;
+  --clr-sst:     #fbbf24;
+
+  /* Spacing */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.75rem;
+  --radius-pill: 9999px;
+
+  /* Shadows */
+  --shadow-card: 0 4px 24px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04) inset;
+  --shadow-glow-blue: 0 0 28px rgba(56, 189, 248, 0.25);
+  --shadow-glow-green: 0 0 28px rgba(52, 211, 153, 0.25);
+
+  /* Z-index */
+  --z-bottom-nav: 100;
+  --z-overlay: 200;
+
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text-primary);
+  overflow-x: hidden;
+}
+
+button {
+  font-family: var(--font);
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+input, select {
+  font-family: var(--font);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }

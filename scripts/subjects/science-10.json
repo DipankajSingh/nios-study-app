@@ -1,0 +1,42 @@
+{
+    "id": "science-10",
+    "name": "Science and Technology",
+    "classLevel": "10",
+    "subjectCode": "212",
+    "icon": "🔬",
+    "description": "Physics, Chemistry, Biology, Environment — Class 10 NIOS Science.",
+    "books": [
+        {
+            "bookNumber": 1,
+            "label": "Book 1",
+            "pdf": "~/Downloads/nios/science-10-book1.pdf",
+            "chapters": [
+                "Matter in Our Surroundings",
+                "Atoms and Molecules",
+                "Structure of the Atom",
+                "Chemical Reactions and Equations",
+                "Acids, Bases and Salts",
+                "Metals and Non-Metals",
+                "Motion",
+                "Laws of Motion and Gravitation"
+            ]
+        },
+        {
+            "bookNumber": 2,
+            "label": "Book 2",
+            "pdf": "~/Downloads/nios/science-10-book2.pdf",
+            "chapters": [
+                "Work and Energy",
+                "Sound",
+                "Light – Reflection and Refraction",
+                "The Human Eye",
+                "Electricity",
+                "Magnetic Effects of Electric Current",
+                "Life Processes",
+                "Control and Coordination",
+                "Heredity and Evolution",
+                "Our Environment"
+            ]
+        }
+    ]
+}

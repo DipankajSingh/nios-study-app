@@ -1,0 +1,40 @@
+{
+    "$schema": "./subject-config.schema.json",
+    "id": "maths-10",
+    "name": "Mathematics",
+    "classLevel": "10",
+    "subjectCode": "211",
+    "icon": "📐",
+    "description": "Number Systems, Algebra, Geometry, Trigonometry, Statistics — Class 10 NIOS Maths.",
+    "books": [
+        {
+            "bookNumber": 1,
+            "label": "Book 1",
+            "pdf": "~/Downloads/nios/maths-10-book1.pdf",
+            "chapters": [
+                "Number Systems",
+                "Exponents and Radicals",
+                "Polynomials",
+                "Linear Equations",
+                "Quadratic Equations",
+                "Sequence and Series",
+                "Similar Triangles",
+                "Circles and Tangents"
+            ]
+        },
+        {
+            "bookNumber": 2,
+            "label": "Book 2",
+            "pdf": "~/Downloads/nios/maths-10-book2.pdf",
+            "chapters": [
+                "Introduction to Trigonometry",
+                "Heights and Distances",
+                "Lines and Angles",
+                "Coordinate Geometry",
+                "Area and Volume",
+                "Statistics",
+                "Introduction to Graphs"
+            ]
+        }
+    ]
+}
