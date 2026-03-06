@@ -38,6 +38,15 @@ from config import (
 )
 from schemas import PYQ, PYQExplanation, SolvedPYQSet, Difficulty, QuestionType, Lang
 
+# Reuse a single httpx client for connection pooling across all API calls
+_http_client: httpx.Client | None = None
+
+def _get_client() -> httpx.Client:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.Client(timeout=120)
+    return _http_client
+
 
 # ── Prompts ──────────────────────────────────────────────────────────────────
 
@@ -120,9 +129,9 @@ def call_claude(prompt: str, system: str = "") -> str:
     if system:
         payload["system"] = system
 
-    with httpx.Client(timeout=120) as client:
-        resp = client.post(CLAUDE_BASE_URL, headers=headers, json=payload)
-        resp.raise_for_status()
+    client = _get_client()
+    resp = client.post(CLAUDE_BASE_URL, headers=headers, json=payload)
+    resp.raise_for_status()
 
     return resp.json()["content"][0]["text"]
 

@@ -114,7 +114,6 @@ def scrape_subjects(course_url, is_class_12=False):
     # Deduplicate old/new curriculums (keep the "New" ones, discard the old ones for the same subject)
     filtered_subjects = []
     # group by the base subject (e.g. "Hindi (301)")
-    import re
     subject_map = {}
     for sub in subjects:
         # Extract base like "Hindi (301)" from "Hindi (301)-New (effective from..."
@@ -202,7 +201,6 @@ def extract_chapter_number(text, href):
     Handles known NIOS patterns like 'Lesson 1', 'L-1NF', '1 - Sets', etc.
     Returns the integer if found, else None.
     """
-    import re
     text_lower = text.lower()
     basename = os.path.basename(href).lower()
 

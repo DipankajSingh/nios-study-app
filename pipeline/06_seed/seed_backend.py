@@ -68,7 +68,7 @@ def generate_ts(seed: SeedData) -> str:
     # Subjects
     lines.append("export const subjects: Subject[] = [")
     for s in seed.subjects:
-        lines.append(f"  {{ id: '{s.id}', name: '{escape_ts(s.name)}', classLevel: '{s.class_level}', description: '{escape_ts(s.description)}', icon: '{s.icon}' }},")
+        lines.append(f"  {{ id: '{s.id}', name: '{escape_ts(s.name)}', classLevel: '{s.class_level}', description: '{escape_ts(s.description)}', icon: '{s.icon}', totalMarks: {s.total_marks} }},")
     lines.append("]")
     lines.append("")
 
@@ -107,7 +107,7 @@ def generate_ts(seed: SeedData) -> str:
     for e in seed.pyq_explanations:
         steps = json.dumps([escape_ts(s) for s in e.steps])
         hints = json.dumps([escape_ts(h) for h in e.hints])
-        lines.append(f"  {{ id: '{e.id}', pyqId: '{e.pyq_id}', lang: '{e.lang}', steps: {steps}, hints: {hints}, answer: '{escape_ts(e.answer)}' }},")
+        lines.append(f"  {{ id: '{e.id}', pyqId: '{e.pyq_id}', lang: '{e.lang}', steps: {steps}, hints: {hints}, answer: '{escape_ts(e.answer)}', commonErrors: '{escape_ts(e.common_errors)}' }},")
     lines.append("]")
     lines.append("")
 

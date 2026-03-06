@@ -45,6 +45,15 @@ from schemas import (
     GoalTier, Lang, ContentBlockType,
 )
 
+# Reuse a single httpx client for connection pooling across all API calls
+_http_client: httpx.Client | None = None
+
+def _get_client() -> httpx.Client:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.Client(timeout=120)
+    return _http_client
+
 
 # ── Prompts ──────────────────────────────────────────────────────────────────
 
@@ -163,10 +172,10 @@ def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
         "response_format": {"type": "json_object"},
     }
 
-    with httpx.Client(timeout=120) as client:
-        resp = client.post(f"{DEEPSEEK_BASE_URL}/chat/completions",
-                           headers=headers, json=payload)
-        resp.raise_for_status()
+    client = _get_client()
+    resp = client.post(f"{DEEPSEEK_BASE_URL}/chat/completions",
+                       headers=headers, json=payload)
+    resp.raise_for_status()
 
     content = resp.json()["choices"][0]["message"]["content"]
 

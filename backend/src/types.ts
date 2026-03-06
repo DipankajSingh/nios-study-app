@@ -11,6 +11,7 @@ export interface Subject {
   classLevel: '10' | '12'
   description: string
   icon: string
+  totalMarks?: number     // default 100
 }
 
 export interface Chapter {
@@ -60,6 +61,7 @@ export interface PyqExplanation {
   steps: string[]
   hints: string[]
   answer: string
+  commonErrors?: string   // where students commonly lose marks
 }
 
 // ── API request/response types ───────────────────────────────────────────

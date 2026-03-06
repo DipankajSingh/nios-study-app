@@ -8,7 +8,7 @@ import type {
   TopicContent,
   Pyq,
   PyqExplanation,
-} from './mockData'
+} from './types'
 
 export const subjects: Subject[] = [
   {

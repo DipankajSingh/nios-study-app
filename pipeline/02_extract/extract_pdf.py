@@ -43,7 +43,7 @@ HOW TO USE:
 # ═══════════════════════════════════════════════════════════════════════════════
 # --- Copy everything below into the FIRST Colab cell and run it ---
 #
-# !pip install -q "docling[vlm]" pydantic pillow
+# !pip install -q "docling[vlm]" docling-core pydantic pillow pandas
 #
 # from google.colab import drive
 # drive.mount('/content/drive')
@@ -104,6 +104,28 @@ else:
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
 from docling.datamodel.base_models import InputFormat
+from docling_core.types.doc import ImageRefMode, PictureItem, TableItem
+
+
+# ── Image filtering ───────────────────────────────────────────────────────────
+# Skip small / decorative images (logos, icons, bullets, horizontal rules).
+# Only keep images likely to be educational: diagrams, graphs, figures, charts.
+MIN_IMAGE_WIDTH  = 150   # px — anything narrower is probably an icon/bullet
+MIN_IMAGE_HEIGHT = 150   # px — anything shorter is probably a divider/logo
+MIN_IMAGE_AREA   = 40000 # px² — catches small images that pass w/h individually
+MAX_ASPECT_RATIO = 8.0   # skip extremely wide/tall strips (rules, banners)
+
+def is_useful_image(pil_image) -> bool:
+    """Return True if the image is large and proportioned enough to be educational content."""
+    w, h = pil_image.size
+    if w < MIN_IMAGE_WIDTH or h < MIN_IMAGE_HEIGHT:
+        return False
+    if w * h < MIN_IMAGE_AREA:
+        return False
+    ratio = max(w, h) / max(min(w, h), 1)
+    if ratio > MAX_ASPECT_RATIO:
+        return False
+    return True
 
 
 def build_converter():
@@ -118,6 +140,7 @@ def build_converter():
 
     # ── Images & figures ──────────────────────────────────────────────────
     pipeline_opts.generate_picture_images = True      # extract figures/graphs as PNG
+    pipeline_opts.generate_page_images = True         # needed for table image export via get_image()
     pipeline_opts.images_scale = 2.0                  # 2x resolution for clarity
 
     # ── Math formulas ─────────────────────────────────────────────────────
@@ -156,87 +179,91 @@ def extract_single_pdf(converter, pdf_path: Path, out_dir: Path) -> dict:
     stem = pdf_path.stem  # e.g. "Chapter 7"
 
     print(f"  🔄 Converting: {pdf_path.name} ...")
-    result = converter.convert(str(pdf_path))
-    doc = result.document
+    conv_result = converter.convert(str(pdf_path))
+    doc = conv_result.document
 
-    # ── 1. Export full markdown ───────────────────────────────────────────
-    md_text = doc.export_to_markdown()
+    # ── 1. Export full markdown with image references ─────────────────────
+    # save_as_markdown writes the .md file and any referenced images beside it
     md_file = out_dir / f"{stem}.md"
-    md_file.write_text(md_text, encoding="utf-8")
+    doc.save_as_markdown(md_file, image_mode=ImageRefMode.REFERENCED)
+    md_text = md_file.read_text(encoding="utf-8")
 
     # ── 2. Extract and save images (figures, graphs, diagrams) ────────────
     img_dir = out_dir / "images"
     img_dir.mkdir(exist_ok=True)
     image_records = []
 
-    # Pictures (figures, graphs, photos)
-    for i, element in enumerate(doc.pictures):
-        img_filename = f"img_{i+1:04d}.png"
-        img_path = img_dir / img_filename
-        try:
-            if hasattr(element, "image") and element.image is not None:
-                element.image.save(str(img_path))
+    # Use iterate_items() + isinstance checks (Docling v2.x API)
+    picture_counter = 0
+    table_counter = 0
+    table_records = []
+
+    skipped_images = 0
+
+    for element, _level in doc.iterate_items():
+        if isinstance(element, PictureItem):
+            picture_counter += 1
+            try:
+                pil_image = element.get_image(doc)
+                if pil_image is None:
+                    continue
+
+                # Filter out small / decorative images
+                if not is_useful_image(pil_image):
+                    skipped_images += 1
+                    continue
+
+                img_filename = f"img_{picture_counter:04d}.png"
+                img_path = img_dir / img_filename
+                with img_path.open("wb") as fp:
+                    pil_image.save(fp, "PNG")
                 image_records.append({
                     "filename": img_filename,
                     "type": "picture",
-                    "element_id": str(getattr(element, "id", i)),
+                    "size": list(pil_image.size),  # [width, height]
+                    "element_id": str(getattr(element, "self_ref", picture_counter)),
                 })
-        except Exception as e:
-            print(f"    ⚠️  Failed to save picture {i}: {e}")
+            except Exception as e:
+                print(f"    ⚠️  Failed to save picture {picture_counter}: {e}")
 
-    # Also try to get any chart/diagram elements that Docling may tag separately
-    if hasattr(doc, "figures"):
-        for i, fig in enumerate(doc.figures):
-            img_filename = f"fig_{i+1:04d}.png"
-            img_path = img_dir / img_filename
+        elif isinstance(element, TableItem):
+            table_counter += 1
+            table_data = {
+                "table_index": table_counter - 1,
+                "element_id": str(getattr(element, "self_ref", table_counter)),
+            }
+
+            # Try to get table as pandas DataFrame → list of dicts
             try:
-                if hasattr(fig, "image") and fig.image is not None:
-                    fig.image.save(str(img_path))
+                df = element.export_to_dataframe(doc=doc)
+                table_data["headers"] = list(df.columns)
+                table_data["rows"] = df.values.tolist()
+                table_data["row_count"] = len(df)
+                table_data["col_count"] = len(df.columns)
+            except Exception:
+                # Fallback: export as HTML snippet
+                try:
+                    table_data["html"] = element.export_to_html(doc=doc)
+                except Exception:
+                    table_data["html"] = "(table extraction failed)"
+
+            # Save table as image via get_image() (requires generate_page_images=True)
+            try:
+                tbl_image = element.get_image(doc)
+                if tbl_image is not None:
+                    tbl_img_name = f"table_{table_counter:04d}.png"
+                    with (img_dir / tbl_img_name).open("wb") as fp:
+                        tbl_image.save(fp, "PNG")
+                    table_data["image"] = tbl_img_name
                     image_records.append({
-                        "filename": img_filename,
-                        "type": "figure",
-                        "element_id": str(getattr(fig, "id", i)),
+                        "filename": tbl_img_name,
+                        "type": "table",
+                        "element_id": str(getattr(element, "self_ref", table_counter)),
                     })
             except Exception:
                 pass
 
-    # ── 3. Extract tables as structured JSON ──────────────────────────────
-    table_records = []
-    for i, table in enumerate(doc.tables):
-        table_data = {
-            "table_index": i,
-            "element_id": str(getattr(table, "id", i)),
-        }
-
-        # Try to get table as pandas DataFrame → list of dicts
-        try:
-            df = table.export_to_dataframe()
-            table_data["headers"] = list(df.columns)
-            table_data["rows"] = df.values.tolist()
-            table_data["row_count"] = len(df)
-            table_data["col_count"] = len(df.columns)
-        except Exception:
-            # Fallback: export as markdown snippet
-            try:
-                table_data["markdown"] = table.export_to_markdown()
-            except Exception:
-                table_data["markdown"] = "(table extraction failed)"
-
-        # Try to save table as image too
-        try:
-            if hasattr(table, "image") and table.image is not None:
-                tbl_img_name = f"table_{i+1:04d}.png"
-                table.image.save(str(img_dir / tbl_img_name))
-                table_data["image"] = tbl_img_name
-                image_records.append({
-                    "filename": tbl_img_name,
-                    "type": "table",
-                    "element_id": str(getattr(table, "id", i)),
-                })
-        except Exception:
-            pass
-
-        table_records.append(table_data)
+            table_records.append(table_data)
 
     # Save tables JSON if any
     if table_records:
@@ -257,7 +284,7 @@ def extract_single_pdf(converter, pdf_path: Path, out_dir: Path) -> dict:
     print(
         f"  ✅ {pdf_path.name} → "
         f"{len(md_text):,} chars, "
-        f"{len(image_records)} images, "
+        f"{len(image_records)} images ({skipped_images} small skipped), "
         f"{len(table_records)} tables"
     )
 
@@ -287,7 +314,8 @@ def extract_subject(pdf_dir: Path, output_dir: Path) -> dict:
         print(f"  ♻️  Resuming: {len(done_files)} already extracted")
 
     # ── Discover PDFs ─────────────────────────────────────────────────────
-    pdf_files = sorted(pdf_dir.glob("*.pdf"))
+    pdf_files = sorted(pdf_dir.glob("*.pdf"),
+                       key=lambda p: extract_chapter_number(p.name) or 999)
     if not pdf_files:
         print(f"  ❌ No PDFs found in {pdf_dir}")
         return {}
