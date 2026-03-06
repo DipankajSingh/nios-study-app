@@ -30,13 +30,18 @@ load_dotenv(PIPELINE_DIR / ".env")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 CLAUDE_API_KEY   = os.getenv("CLAUDE_API_KEY", "")
 GROQ_API_KEY     = os.getenv("GROQ_API_KEY", "")
+GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
 
 # ── API endpoints ────────────────────────────────────────────────────────────
-DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL    = "deepseek-chat"           # DeepSeek V3
 
 CLAUDE_BASE_URL   = "https://api.anthropic.com/v1/messages"
 CLAUDE_MODEL      = "claude-sonnet-4-20250514"
+
+# Gemini via OpenAI-compatible endpoint
+GEMINI_BASE_URL   = "https://generativelanguage.googleapis.com/v1beta/openai"
+GEMINI_MODEL      = "gemini-2.5-flash"        # Stable, fast, cheap, JSON mode
 
 # ── Processing defaults ──────────────────────────────────────────────────────
 CHUNK_SIZE        = 3000      # chars per chunk sent to structuring API
@@ -76,5 +81,6 @@ if __name__ == "__main__":
     print(f"OUTPUT_DIR:     {OUTPUT_DIR}")
     print(f"DeepSeek key:   {'set' if DEEPSEEK_API_KEY else 'MISSING'}")
     print(f"Claude key:     {'set' if CLAUDE_API_KEY else 'MISSING'}")
+    print(f"Gemini key:     {'set' if GEMINI_API_KEY else 'MISSING'}")
     print(f"Groq key:       {'set' if GROQ_API_KEY else 'MISSING'}")
     print(f"Subjects:       {list(SUBJECTS.keys())}")

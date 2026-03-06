@@ -3,11 +3,16 @@
 Stage 3 — Structure Content
 
 Takes the extracted Markdown (from Stage 2 / Colab) and calls an LLM API
-(DeepSeek V3 by default) to produce structured JSON matching our Pydantic schemas.
+to produce structured JSON matching our Pydantic schemas.
+
+Supported providers: deepseek, gemini (default)
 
 Usage:
     cd pipeline
-    python -m 03_structure.structure_content --subject maths-12 [--resume]
+    python 03_structure/structure_content.py --subject maths-12
+    python 03_structure/structure_content.py --subject maths-12 --provider deepseek
+    python 03_structure/structure_content.py --subject maths-12 --dry-run
+    python 03_structure/structure_content.py --subject maths-12 --resume
 
 What it does for each chapter:
   1. Reads the extracted markdown file
@@ -15,6 +20,11 @@ What it does for each chapter:
   3. Sends each chunk to the LLM with a strict structuring prompt
   4. Collects structured topics + content blocks
   5. Writes a StructuredSubject JSON to output/structured/<subject>.json
+
+Rate limiting:
+  - Gemini free tier: 10 RPM → 6s pause between requests
+  - DeepSeek: generous limits → 2s pause
+  - On 429 errors: progressive backoff (30s, 60s, 90s...)
 
 Checkpointing: after each chapter is processed, progress is saved.
 Use --resume to continue from where you left off.
@@ -29,12 +39,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry, stop_after_attempt, wait_exponential,
+    retry_if_exception_type, before_sleep_log,
+)
+import logging
+
+logging.basicConfig(level=logging.WARNING)
+_logger = logging.getLogger(__name__)
 
 # Add parent to path so we can import config and schemas
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import (
     DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL,
+    GEMINI_API_KEY, GEMINI_BASE_URL, GEMINI_MODEL,
     EXTRACTED_DIR, STRUCTURED_DIR, SUBJECTS,
     CHUNK_SIZE, CHUNK_OVERLAP, RATE_LIMIT_PAUSE, MAX_RETRIES,
     ensure_dirs,
@@ -53,6 +71,38 @@ def _get_client() -> httpx.Client:
     if _http_client is None or _http_client.is_closed:
         _http_client = httpx.Client(timeout=120)
     return _http_client
+
+
+# ── Provider configuration ───────────────────────────────────────────────────
+# Each provider returns (base_url, api_key, model_name) for OpenAI-compatible calls.
+
+PROVIDERS = {
+    "deepseek": {
+        "base_url": DEEPSEEK_BASE_URL,
+        "api_key": DEEPSEEK_API_KEY,
+        "model": DEEPSEEK_MODEL,
+        "label": "DeepSeek V3",
+        "pause": RATE_LIMIT_PAUSE,  # 2s — generous limits
+        "max_retries": MAX_RETRIES,
+    },
+    "gemini": {
+        "base_url": GEMINI_BASE_URL,
+        "api_key": GEMINI_API_KEY,
+        "model": GEMINI_MODEL,
+        "label": "Gemini 2.5 Flash",
+        "pause": 6.0,   # Free tier: 10 RPM ≈ 6s/req
+        "max_retries": 5,  # More retries for rate-limit recovery
+    },
+}
+
+# Active provider — set by main() based on --provider flag
+_active_provider: dict = PROVIDERS["deepseek"]
+
+def set_provider(name: str):
+    global _active_provider
+    if name not in PROVIDERS:
+        raise ValueError(f"Unknown provider '{name}'. Choose from: {list(PROVIDERS.keys())}")
+    _active_provider = PROVIDERS[name]
 
 
 # ── Prompts ──────────────────────────────────────────────────────────────────
@@ -143,10 +193,13 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) 
 
 # ── LLM API call ─────────────────────────────────────────────────────────────
 
-@retry(stop=stop_after_attempt(MAX_RETRIES), wait=wait_exponential(min=2, max=30))
 def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
                           chunk_idx: int, total_chunks: int) -> dict:
-    """Send a chunk to DeepSeek V3 and parse the JSON response."""
+    """Send a chunk to the active LLM provider and parse the JSON response.
+
+    Handles rate limits (429) with progressive backoff: 30s → 60s → 120s.
+    Other HTTP errors and JSON parse errors use standard exponential backoff.
+    """
     user_msg = USER_PROMPT_TEMPLATE.format(
         subject_name=subject["name"],
         subject_code=subject["code"],
@@ -157,35 +210,88 @@ def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
         chunk_text=chunk,
     )
 
+    prov = _active_provider
+    max_retries = prov.get("max_retries", MAX_RETRIES)
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {prov['api_key']}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": DEEPSEEK_MODEL,
+        "model": prov["model"],
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_msg},
         ],
         "temperature": 0.1,  # Low temp for factual extraction
-        "max_tokens": 4096,
+        "max_tokens": 8192,
         "response_format": {"type": "json_object"},
     }
 
     client = _get_client()
-    resp = client.post(f"{DEEPSEEK_BASE_URL}/chat/completions",
-                       headers=headers, json=payload)
-    resp.raise_for_status()
+    last_error = None
 
-    content = resp.json()["choices"][0]["message"]["content"]
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = client.post(f"{prov['base_url']}/chat/completions",
+                               headers=headers, json=payload)
 
-    # Parse JSON from response (handle markdown fences)
-    content = content.strip()
-    if content.startswith("```"):
-        content = re.sub(r"^```(?:json)?\n?", "", content)
-        content = re.sub(r"\n?```$", "", content)
+            # Handle rate limits specially
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get("retry-after", 0))
+                wait_time = max(retry_after, 30 * attempt)  # 30s, 60s, 90s...
+                print(f"\n    ⏳ Rate limited (429). Waiting {wait_time}s (attempt {attempt}/{max_retries})...",
+                      end=" ", flush=True)
+                time.sleep(wait_time)
+                continue
 
-    return json.loads(content)
+            resp.raise_for_status()
+
+            raw_resp = resp.json()
+            finish_reason = raw_resp["choices"][0].get("finish_reason", "unknown")
+            content = raw_resp["choices"][0]["message"]["content"]
+
+            # Parse JSON from response (handle markdown fences)
+            content = content.strip()
+            if content.startswith("```"):
+                content = re.sub(r"^```(?:json)?\n?", "", content)
+                content = re.sub(r"\n?```$", "", content)
+
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                last_error = f"JSON parse failed (finish_reason={finish_reason}, {len(content)} chars)"
+                if attempt < max_retries:
+                    wait = 2 ** attempt
+                    print(f"\n    ⚠️  {last_error}. Retrying in {wait}s...")
+                    print(f"    → First 200 chars: {content[:200]}")
+                    time.sleep(wait)
+                else:
+                    print(f"\n    ⚠️  {last_error} (giving up)")
+                    print(f"    → First 300 chars: {content[:300]}")
+                    raise
+
+        except httpx.HTTPStatusError as e:
+            last_error = f"HTTP {e.response.status_code}"
+            status = e.response.status_code
+            if status == 429:
+                wait_time = 30 * attempt
+                print(f"\n    ⏳ Rate limited (429). Waiting {wait_time}s (attempt {attempt}/{max_retries})...",
+                      end=" ", flush=True)
+                time.sleep(wait_time)
+            elif 500 <= status < 600:
+                wait = 2 ** attempt
+                print(f"\n    ⚠️  Server error ({status}). Retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                print(f"\n    ❌ HTTP {status}: {e.response.text[:200]}")
+                raise
+        except httpx.TimeoutException:
+            wait = 5 * attempt
+            last_error = "Timeout"
+            print(f"\n    ⏳ Timeout. Retrying in {wait}s (attempt {attempt}/{max_retries})...")
+            time.sleep(wait)
+
+    raise RuntimeError(f"All {max_retries} attempts failed. Last error: {last_error}")
 
 
 # ── Processing pipeline ──────────────────────────────────────────────────────
@@ -221,7 +327,7 @@ def process_chapter(
             print(f"❌ {e}")
             continue
 
-        time.sleep(RATE_LIMIT_PAUSE)
+        time.sleep(_active_provider.get("pause", RATE_LIMIT_PAUSE))
 
     if not all_topics_raw:
         print(f"    ⚠️  No topics extracted from {md_file.name}")
@@ -296,8 +402,12 @@ def main():
     parser = argparse.ArgumentParser(description="Stage 3: Structure extracted content via LLM")
     parser.add_argument("--subject", required=True, help="Subject ID, e.g. maths-12")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
+    parser.add_argument("--provider", default="gemini", choices=list(PROVIDERS.keys()),
+                        help="LLM provider to use (default: gemini)")
     parser.add_argument("--extracted-dir", type=str, default=None,
                         help="Override extracted markdown directory")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Show what would be processed without calling the API")
     args = parser.parse_args()
 
     ensure_dirs()
@@ -306,9 +416,15 @@ def main():
         print(f"❌ Unknown subject '{args.subject}'. Known: {list(SUBJECTS.keys())}")
         sys.exit(1)
 
-    if not DEEPSEEK_API_KEY:
-        print("❌ DEEPSEEK_API_KEY not set. Copy .env.example → .env and add your key.")
+    # Set and validate the chosen provider
+    set_provider(args.provider)
+    prov = _active_provider
+    if not prov["api_key"]:
+        key_name = f"{args.provider.upper()}_API_KEY"
+        print(f"❌ {key_name} not set. Add it to pipeline/.env")
         sys.exit(1)
+
+    print(f"🤖 Provider: {prov['label']} ({prov['model']})")
 
     subject_cfg = SUBJECTS[args.subject]
     subject = Subject(
@@ -341,7 +457,21 @@ def main():
 
     print(f"📚 Subject: {subject.name} ({args.subject})")
     print(f"📁 Source: {extracted_dir}")
-    print(f"📄 Found {len(md_files)} markdown files\n")
+    print(f"📄 Found {len(md_files)} markdown files")
+    print(f"⏱️  Rate limit pause: {prov.get('pause', RATE_LIMIT_PAUSE)}s/req\n")
+
+    # Dry-run: just list files and sizes, then exit
+    if args.dry_run:
+        total_chunks = 0
+        for md_file in md_files:
+            text = md_file.read_text(encoding="utf-8")
+            chunks = chunk_text(text)
+            total_chunks += len(chunks)
+            print(f"  📄 {md_file.relative_to(extracted_dir)}: {len(text):,} chars → {len(chunks)} chunks")
+        est_time = total_chunks * prov.get("pause", RATE_LIMIT_PAUSE) + total_chunks * 15  # ~15s per API call
+        print(f"\n📊 Total: {len(md_files)} files, {total_chunks} chunks")
+        print(f"⏱️  Estimated time: ~{est_time / 60:.0f} min (at {prov.get('pause', RATE_LIMIT_PAUSE)}s pause + ~15s/API call)")
+        return
 
     # Checkpoint
     output_file = STRUCTURED_DIR / f"{args.subject}.json"
