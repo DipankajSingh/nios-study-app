@@ -20,6 +20,10 @@ STRUCTURED_DIR   = OUTPUT_DIR / "structured"   # JSON from DeepSeek
 VERIFIED_DIR     = OUTPUT_DIR / "verified"     # Verified clean JSON
 SOLVED_DIR       = OUTPUT_DIR / "solved"       # PYQs with solutions
 
+# ── Credentials (Google OAuth — shared across pipeline stages) ───────────────
+CREDENTIALS_FILE = PIPELINE_DIR / "credentials.json"
+TOKEN_FILE       = PIPELINE_DIR / "token.json"
+
 # ── Environment ──────────────────────────────────────────────────────────────
 load_dotenv(PIPELINE_DIR / ".env")
 

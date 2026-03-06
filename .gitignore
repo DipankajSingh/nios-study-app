@@ -43,5 +43,6 @@ scripts/venv/
 pipeline/.env
 pipeline/output/
 pipeline/**/__pycache__/
-pipeline/01_scrape/credentials.json
-pipeline/01_scrape/token.json
+pipeline/credentials.json
+pipeline/token.json
+pipeline/token_readonly.json

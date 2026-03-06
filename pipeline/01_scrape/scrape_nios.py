@@ -16,6 +16,11 @@ SCOPES = ['https://www.googleapis.com/auth/drive.file']
 BASE_URL = "https://nios.ac.in"
 REGISTRY_FILE = "downloads_registry.json"
 
+# Credentials live at pipeline/ level (shared across stages)
+_PIPELINE_DIR = os.path.join(os.path.dirname(__file__), "..")
+_CREDENTIALS_FILE = os.path.join(_PIPELINE_DIR, "credentials.json")
+_TOKEN_FILE = os.path.join(_PIPELINE_DIR, "token.json")
+
 def load_registry():
     if os.path.exists(REGISTRY_FILE):
         with open(REGISTRY_FILE, 'r') as f:
@@ -28,20 +33,20 @@ def save_registry(registry):
 
 def get_drive_service():
     creds = None
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if os.path.exists(_TOKEN_FILE):
+        creds = Credentials.from_authorized_user_file(_TOKEN_FILE, SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
             except Exception as e:
                 print(f"Token refresh failed: {e}. Please delete token.json and re-authenticate.")
-                os.remove("token.json")
+                os.remove(_TOKEN_FILE)
                 return get_drive_service()
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(_CREDENTIALS_FILE, SCOPES)
             creds = flow.run_local_server(port=0)
-        with open('token.json', 'w') as token:
+        with open(_TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
     return build('drive', 'v3', credentials=creds)
 
