@@ -55,6 +55,7 @@ HOW TO USE:
 # --- Copy everything below into the SECOND Colab cell ---
 
 import os
+import gc
 import json
 import re
 import traceback
@@ -188,6 +189,9 @@ def extract_single_pdf(converter, pdf_path: Path, out_dir: Path) -> dict:
     doc.save_as_markdown(md_file, image_mode=ImageRefMode.REFERENCED)
     md_text = md_file.read_text(encoding="utf-8")
 
+    # Free the heavy conversion result early (keeps doc alive via local ref)
+    del conv_result
+
     # ── 2. Extract and save images (figures, graphs, diagrams) ────────────
     img_dir = out_dir / "images"
     img_dir.mkdir(exist_ok=True)
@@ -287,6 +291,10 @@ def extract_single_pdf(converter, pdf_path: Path, out_dir: Path) -> dict:
         f"{len(image_records)} images ({skipped_images} small skipped), "
         f"{len(table_records)} tables"
     )
+
+    # Free the document object (page images, OCR data, etc.)
+    del doc
+    gc.collect()
 
     return {
         "source_pdf": pdf_path.name,
