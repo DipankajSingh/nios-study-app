@@ -93,8 +93,8 @@ PROVIDERS = {
         "api_key": GEMINI_API_KEY,
         "model": GEMINI_MODEL,   # gemini-2.5-flash-lite — fast, no thinking overhead
         "label": "Gemini Flash-Lite",
-        "pause": 4.0,   # Free tier: 30 RPM → 2s safe, but 4s conservative
-        "max_retries": 5,  # More retries for rate-limit recovery
+        "pause": 6.0,   # Free tier: 20 RPM → 3s min, 6s conservative
+        "max_retries": 8,  # More retries — each 429 retry costs a rate limit slot
     },
     "gemini-flash": {
         "base_url": GEMINI_BASE_URL,
@@ -291,12 +291,33 @@ def _fix_json_backslashes(raw: str) -> str:
 
 # ── LLM API call ─────────────────────────────────────────────────────────────
 
+_RETRY_IN_RE = re.compile(r'retry\s+in\s+([\d.]+)\s*s', re.IGNORECASE)
+
+def _parse_retry_time(resp: httpx.Response) -> float:
+    """Extract retry-in seconds from Gemini 429 response body or headers."""
+    # Try Retry-After header first
+    header_val = resp.headers.get("retry-after")
+    if header_val:
+        try:
+            return float(header_val)
+        except ValueError:
+            pass
+    # Parse from response body: "Please retry in 45.597125691s."
+    try:
+        body_text = resp.text
+        match = _RETRY_IN_RE.search(body_text)
+        if match:
+            return float(match.group(1))
+    except Exception:
+        pass
+    return 0.0
+
 def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
                           chunk_idx: int, total_chunks: int) -> dict:
     """Send a chunk to the active LLM provider and parse the JSON response.
 
-    Handles rate limits (429) with progressive backoff: 30s → 60s → 120s.
-    Other HTTP errors and JSON parse errors use standard exponential backoff.
+    Handles rate limits (429) by parsing the actual retry time from the Gemini
+    error body ("Please retry in Xs"), falling back to progressive backoff.
     """
     user_msg = USER_PROMPT_TEMPLATE.format(
         subject_name=subject["name"],
@@ -333,11 +354,13 @@ def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
             resp = client.post(f"{prov['base_url']}/chat/completions",
                                headers=headers, json=payload)
 
-            # Handle rate limits specially
+            # Handle rate limits specially — parse actual retry time from body
             if resp.status_code == 429:
-                retry_after = int(resp.headers.get("retry-after", 0))
-                wait_time = max(retry_after, 30 * attempt)  # 30s, 60s, 90s...
-                print(f"\n    ⏳ Rate limited (429). Waiting {wait_time}s (attempt {attempt}/{max_retries})...",
+                wait_time = _parse_retry_time(resp)
+                if wait_time < 10:
+                    wait_time = 30 * attempt  # Fallback: 30, 60, 90...
+                wait_time += 5  # Small buffer for safety
+                print(f"\n    ⏳ Rate limited (429). Waiting {wait_time:.0f}s (attempt {attempt}/{max_retries})...",
                       end=" ", flush=True)
                 time.sleep(wait_time)
                 continue
@@ -398,8 +421,11 @@ def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
             last_error = f"HTTP {e.response.status_code}"
             status = e.response.status_code
             if status == 429:
-                wait_time = 30 * attempt
-                print(f"\n    ⏳ Rate limited (429). Waiting {wait_time}s (attempt {attempt}/{max_retries})...",
+                wait_time = _parse_retry_time(e.response)
+                if wait_time < 10:
+                    wait_time = 30 * attempt
+                wait_time += 5
+                print(f"\n    ⏳ Rate limited (429). Waiting {wait_time:.0f}s (attempt {attempt}/{max_retries})...",
                       end=" ", flush=True)
                 time.sleep(wait_time)
             elif 500 <= status < 600:
