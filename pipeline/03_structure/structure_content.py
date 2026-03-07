@@ -146,6 +146,10 @@ CRITICAL RULES:
 5. Do NOT invent facts. Only extract what is present in the source text.
 6. If the chunk contains exercises/questions, note them but focus on teaching content.
 7. Merge related ideas into coherent topics rather than creating one topic per paragraph.
+8. BE CONCISE: Keep summary_bullets to 2-4 items max. Keep why_important to 1-2 sentences.
+   Keep exact_source_quote to ONE KEY sentence (not a whole paragraph).
+   Aim for 2-4 content_blocks per topic, not more.
+   The entire response must fit in ~4000 tokens.
 """
 
 USER_PROMPT_TEMPLATE = """\
@@ -191,6 +195,47 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) 
     return [c for c in chunks if len(c) > 50]  # Skip tiny fragments
 
 
+def _repair_truncated_json(text: str) -> dict | None:
+    """Attempt to repair a truncated JSON response by closing open structures.
+
+    When finish_reason='length', the JSON is valid up to truncation point.
+    We try progressively aggressive repair strategies.
+    """
+    # Common closing suffixes to try (from least to most aggressive)
+    close_suffixes = [
+        ']}',           # close topics array + root object
+        '"]}',          # close truncated string + topics array + root
+        '"}]}',         # close string + content_blocks array + topic + topics array + root
+        '"}]}]}',       # close string + nested arrays
+        '"]}]}]}',      # deeply nested close
+    ]
+
+    # Strategy 1: Walk backwards to find a valid truncation point
+    for end_pos in range(len(text) - 1, max(0, len(text) - 2000), -1):
+        candidate = text[:end_pos + 1]
+        for suffix in close_suffixes:
+            try:
+                result = json.loads(candidate + suffix)
+                if isinstance(result, dict) and "topics" in result:
+                    return result
+            except json.JSONDecodeError:
+                continue
+
+    # Strategy 2: Find last complete JSON object boundary
+    last_brace = text.rfind("},")
+    if last_brace > 0:
+        candidate = text[:last_brace + 1]
+        for suffix in close_suffixes:
+            try:
+                result = json.loads(candidate + suffix)
+                if isinstance(result, dict):
+                    return result
+            except json.JSONDecodeError:
+                continue
+
+    return None
+
+
 # ── LLM API call ─────────────────────────────────────────────────────────────
 
 def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
@@ -223,7 +268,7 @@ def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
             {"role": "user", "content": user_msg},
         ],
         "temperature": 0.1,  # Low temp for factual extraction
-        "max_tokens": 8192,
+        "max_tokens": 16384,
         "response_format": {"type": "json_object"},
     }
 
@@ -256,9 +301,24 @@ def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
                 content = re.sub(r"^```(?:json)?\n?", "", content)
                 content = re.sub(r"\n?```$", "", content)
 
+            # Fix invalid JSON backslash escapes from LaTeX (e.g. \{ \} \, \; etc.)
+            # Valid JSON escapes: \" \\ \/ \b \f \n \r \t \uXXXX
+            content = re.sub(
+                r'\\(?!["\\/bfnrtu])',
+                r'\\\\',
+                content,
+            )
+
             try:
                 return json.loads(content)
             except json.JSONDecodeError:
+                # If truncated due to length, try to repair JSON
+                if finish_reason == "length":
+                    repaired = _repair_truncated_json(content)
+                    if repaired is not None:
+                        print(f"\n    🔧 Repaired truncated JSON ({len(content)} chars)", end=" ")
+                        return repaired
+
                 last_error = f"JSON parse failed (finish_reason={finish_reason}, {len(content)} chars)"
                 if attempt < max_retries:
                     wait = 2 ** attempt
