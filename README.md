@@ -16,24 +16,32 @@ This project is a NIOS-focused last‑minute study assistant. It builds PYQ-base
 
 ## High-Level Architecture
 
+- `pipeline/`: Python content generation pipeline (6 stages: scrape → extract → structure → verify → solve → seed).
 - `web/`: React + TypeScript single-page app, mobile-first design.
   - Onboarding flow for class, subjects, goal, exam date, daily time, preferred language.
-  - Today’s Plan screen showing tasks per subject.
+  - Today's Plan screen showing tasks per subject.
   - Subject and topic views (notes + PYQs + explanations).
-- `backend/` (planned): Serverless functions (Cloudflare Workers or similar) exposing JSON APIs:
-  - `/api/subjects`, `/api/topics`, `/api/plan/today`, `/api/practice/attempt`, `/api/ai/explain`, etc.
-  - Backed by a relational database (D1 / Postgres) and object storage for PDFs.
+- `backend/`: Cloudflare Worker exposing JSON APIs:
+  - `/api/subjects`, `/api/topics/:id/details`, `/api/plan/today`, etc.
+  - All content bundled as static TypeScript arrays (no database yet).
+- `content/`: Raw source material (NIOS PDFs, PYQ papers downloaded from Drive).
 
 ## Tech Stack (current)
 
 - Frontend:
-  - React + TypeScript (Vite).
+  - React 19 + TypeScript 5.9 (Vite 7).
   - CSS (to be refined, likely with a utility-first framework in future).
-- Backend (planned):
+- Backend:
   - Cloudflare Workers (TypeScript).
-  - Cloudflare D1 / Postgres for structured data.
-  - Cloudflare R2 / other free storage for NIOS PDFs and preprocessed JSON.
-  - Cloudflare AI for summarisation, explanations, and doubt assistance (always constrained by NIOS content).
+  - Static JSON data bundled in worker (no database yet).
+- Pipeline:
+  - Python 3.13 with Pydantic v2 for data validation.
+  - Docling v2 on Google Colab for PDF extraction.
+  - Gemini 2.5 Flash-Lite (free tier) for content structuring.
+  - Claude (planned) for PYQ solving.
+- Infrastructure:
+  - Google Drive for PDF storage and extraction output.
+  - Google Colab (free GPU) for PDF processing.
 
 ## Running the Web App
 
@@ -53,48 +61,75 @@ From the `web` directory:
 
 3. Open the local URL printed in the terminal (usually `http://localhost:5173`).
 
-## Backend generation pipeline
+## Content Generation Pipeline
 
-The repository includes a simple content-generation pipeline in `scripts/`:
+The repository includes a **6-stage Python pipeline** in `pipeline/` that transforms raw NIOS PDFs into structured, verified study content. See [MASTER_PLAN.md](MASTER_PLAN.md) for full architecture details.
 
-1. Copy `scripts/.env.example` to `scripts/.env` and fill in your API key(s):
+### Quick Start
 
-   ```bash
-   cp scripts/.env.example scripts/.env
-   # edit the file to set GROQ_API_KEY=...
-   ```
+```bash
+cd pipeline
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # Add your API keys (GEMINI_API_KEY required for Stage 03)
+```
 
-2. Generate topic notes (uses Groq by default; runs in "resume" mode):
+### Pipeline Stages
 
-   ```bash
-   cd scripts
-   npx ts-node generateContent.ts --subject maths-12 --resume
-   # optionally specify provider if more are supported:
-   npx ts-node generateContent.ts --subject maths-12 --resume --provider groq
-   ```
+| Stage            | What it does                        | Command                                                       |
+| ---------------- | ----------------------------------- | ------------------------------------------------------------- |
+| **01 Scrape**    | Download NIOS PDFs → Google Drive   | `cd 01_scrape && python scrape_nios.py`                       |
+| **02 Extract**   | PDF → Markdown (Colab + Docling)    | Open notebook in Colab with GPU                               |
+| **Download**     | Get extracted Markdown from Drive   | `python download_from_drive.py`                               |
+| **03 Structure** | Markdown → structured JSON (Gemini) | `python 03_structure/structure_content.py --subject maths-12` |
+| **04 Verify**    | Anti-hallucination check            | `python 04_verify/verify_content.py --subject maths-12`       |
+| **05 Solve**     | PYQ extraction + solutions (Claude) | `python 05_solve/solve_pyqs.py --subject maths-12`            |
+| **06 Seed**      | JSON → TypeScript for backend       | `python 06_seed/seed_backend.py --subject maths-12`           |
 
-   If you hit the free-tier rate limit, either add payment or repeat the command
-   after the limit resets. The script checkpoints progress automatically.
+### Stage 03 Options
 
-3. Seed the backend data from generated JSON:
+```bash
+# Preview what will be processed (no API calls)
+python 03_structure/structure_content.py --subject maths-12 --dry-run
 
-   ```bash
-   npx ts-node seed.ts --subject maths-12 --dry-run    # preview only
-   npx ts-node seed.ts --subject maths-12             # write to backend/src/generatedData.ts
-   ```
+# Test with just 5 chunks (conserve free quota)
+python 03_structure/structure_content.py --subject maths-12 --limit 5
 
-4. Start the backend (Cloudflare Worker) and the web app:
-   ```bash
-   cd backend && npm install && npm run dev   # worker on localhost:8787
-   cd ../web && npm install && npm run dev     # frontend on localhost:5173
-   ```
+# Resume from checkpoint after interruption
+python 03_structure/structure_content.py --subject maths-12 --resume
 
-The `content/` directory already contains generated files so you can skip steps
-1–3 initially if you just want to run the app.
+# Use the thinking model (slower but higher quality)
+python 03_structure/structure_content.py --subject maths-12 --provider gemini-flash
+```
+
+### Current Progress (maths-12)
+
+- [x] 19 chapters scraped and uploaded to Google Drive
+- [x] 19 chapters extracted to Markdown via Colab (Chapter 20 empty in source)
+- [x] Markdown downloaded to `pipeline/output/extracted/maths-12/`
+- [x] Stage 03 code production-ready (Gemini 2.5 Flash-Lite, smart 429 handling)
+- [ ] Stage 03 full run (421 chunks, ~63 min estimated)
+- [ ] Stages 04-06
+
+## Running the App
+
+**Backend** (Cloudflare Worker):
+
+```bash
+cd backend && npm install && npm run dev   # worker on localhost:8787
+```
+
+**Frontend** (React + Vite):
+
+```bash
+cd web && npm install && npm run dev       # frontend on localhost:5173
+```
 
 ## Next Steps
 
-- Implement the onboarding flow in the web app (class, subjects, goal, exam date, daily time, language).
-- Define TypeScript models for subjects, topics, PYQs, topic content, learning paths, and tasks.
-- Add a simple in-memory/mock API layer in the web app to simulate serverless responses.
-- Create a minimal Cloudflare Worker project for real APIs once the data contracts stabilise.
+- [ ] Complete Stage 03 full run for maths-12 (Gemini free tier, ~63 min)
+- [ ] Run verification (Stage 04) and seed backend (Stage 06)
+- [ ] Process PYQ papers through Stage 05
+- [ ] Add more subjects (English, Science, Social Studies)
+- [ ] Frontend component split and routing
+- [ ] PWA support for offline access

@@ -44,11 +44,11 @@ Build a **mobile-first study companion** for NIOS (National Institute of Open Sc
 │  01_scrape → 02_extract → 03_structure → 04_verify          │
 │      ↓           ↓            ↓              ↓              │
 │  NIOS PDFs   Markdown     Structured      Verified          │
-│              (Colab)       JSON (AI)       JSON              │
+│  → Drive    (Colab+Docling) JSON (Gemini)  JSON             │
 │                                              ↓              │
 │                              05_solve → 06_seed             │
 │                              PYQ sols   TypeScript          │
-│                                           ↓                 │
+│                              (Claude)     ↓                 │
 │                                    backend/src/data/        │
 └─────────────────────────────────────────────────────────────┘
                               ↓
@@ -95,10 +95,12 @@ nios-study-app/
 │   │   ├── credentials.json    ← Google OAuth (gitignored)
 │   │   └── token.json          ← Auto-generated auth token (gitignored)
 │   │
-│   ├── 02_extract/             ← PDF → Markdown (Google Colab)
-│   │   └── extract_pdf.py
+│   ├── 02_extract/             ← PDF → Markdown (Google Colab + Docling)
+│   │   └── NIOS_PDF_Extraction.ipynb
 │   │
-│   ├── 03_structure/           ← Markdown → structured JSON (DeepSeek V3)
+│   ├── download_from_drive.py  ← Download extracted Markdown from Drive
+│   │
+│   ├── 03_structure/           ← Markdown → structured JSON (Gemini)
 │   │   └── structure_content.py
 │   │
 │   ├── 04_verify/              ← Anti-hallucination verification
@@ -164,8 +166,8 @@ The pipeline transforms raw NIOS PDFs into structured, verified study content. E
 | Stage            | Script                 | Input                    | Output              | Runs On          |
 | ---------------- | ---------------------- | ------------------------ | ------------------- | ---------------- |
 | **01 Scrape**    | `scrape_nios.py`       | NIOS website             | PDFs → Google Drive | Local            |
-| **02 Extract**   | `extract_pdf.py`       | PDFs                     | Markdown files      | **Google Colab** |
-| **03 Structure** | `structure_content.py` | Markdown/raw JSON        | Structured JSON     | Local (API)      |
+| **02 Extract**   | Colab notebook         | PDFs (from Drive)        | Markdown files      | **Google Colab** |
+| **03 Structure** | `structure_content.py` | Markdown                 | Structured JSON     | Local (Gemini)   |
 | **04 Verify**    | `verify_content.py`    | Structured JSON + source | Verified JSON       | Local            |
 | **05 Solve**     | `solve_pyqs.py`        | PYQ papers               | Solved PYQ JSON     | Local (API)      |
 | **06 Seed**      | `seed_backend.py`      | Verified JSON + PYQs     | TypeScript file     | Local            |
@@ -248,46 +250,81 @@ This scrapes the NIOS course listing pages and writes `subjects_10.json` / `subj
 - `subjects_12.json` / `subjects_10.json` — subject URLs
 - `downloads_registry.json` — upload tracking (reset when clearing Drive)
 
-#### Stage 02: Extract (`02_extract/extract_pdf.py`)
+#### Stage 02: Extract (Google Colab notebook)
 
-Converts PDFs to structured Markdown using **Docling** on Google Colab (user's local machine lacks GPU power).
+Converts PDFs to structured Markdown using **Docling v2** on Google Colab GPU (T4/A100). The notebook is at `pipeline/02_extract/NIOS_PDF_Extraction.ipynb`.
 
 **Colab workflow:**
 
-1. Copy `extract_pdf.py` cells to a Colab notebook
-2. Mount Google Drive, configure paths
-3. Run extraction — processes all PDFs, creates per-PDF markdown
-4. Results saved to Google Drive, download to `pipeline/output/extracted/`
+1. Open the notebook in Google Colab (GPU runtime required)
+2. Mount Google Drive — reads PDFs from the scraper's Drive folder
+3. Run all cells — processes each chapter PDF to Markdown
+4. Results saved to Google Drive under `NIOS_Extracted/`
+5. Download to local: `python pipeline/download_from_drive.py` → saves to `pipeline/output/extracted/`
 
 **Key features:**
 
 - Checkpointing via `_extraction_checkpoint.json` (resumes mid-batch)
 - Manifest file lists all extracted files with metadata
-- Handles tables, equations, diagrams
+- Memory management: periodic `gc.collect()` + `torch.cuda.empty_cache()` for stable Colab runs
+- Image filtering: skips low-information images (<5KB, extreme aspect ratios)
+- Handles tables, equations, diagrams via Docling's `TableFormerMode.ACCURATE`
+
+**Download helper** (`pipeline/download_from_drive.py`):
+
+Downloads all extracted Markdown from Google Drive to the local `output/extracted/` directory, organizing by chapter. Requires `credentials.json` from Stage 01.
 
 #### Stage 03: Structure (`03_structure/structure_content.py`)
 
-Sends extracted markdown to **DeepSeek V3** API to produce structured JSON matching the `schemas.py` models.
+Sends extracted markdown to **Gemini 2.5 Flash-Lite** (default) via the OpenAI-compatible endpoint to produce structured JSON matching the `schemas.py` models.
 
 ```bash
 cd pipeline
-python -m 03_structure.structure_content --subject maths-12 [--resume]
+python 03_structure/structure_content.py --subject maths-12
+python 03_structure/structure_content.py --subject maths-12 --provider gemini-flash  # thinking model
+python 03_structure/structure_content.py --subject maths-12 --dry-run   # preview chunks
+python 03_structure/structure_content.py --subject maths-12 --resume    # continue from checkpoint
+python 03_structure/structure_content.py --subject maths-12 --limit 5   # test first 5 chunks
 ```
+
+> **Note:** Cannot use `python -m 03_structure.structure_content` because directory names starting with digits are not valid Python module names. Use the direct path instead.
+
+**Supported providers:**
+
+| Provider           | Model                   | Speed     | Token Efficiency            | Free Tier RPM |
+| ------------------ | ----------------------- | --------- | --------------------------- | ------------- |
+| `gemini` (default) | `gemini-2.5-flash-lite` | ~3s/chunk | Best (no thinking overhead) | 20 RPM        |
+| `gemini-flash`     | `gemini-2.5-flash`      | ~7s/chunk | 2x more tokens (thinking)   | 10 RPM        |
+| `deepseek`         | `deepseek-chat` (V3)    | ~5s/chunk | Good                        | Generous      |
 
 **Key features:**
 
-- Text chunking with overlap for large chapters
-- Retry logic via `tenacity` (exponential backoff)
-- Per-chapter checkpointing
+- Text chunking with paragraph-aware overlap (~3000 char chunks)
+- Smart 429 handling: parses actual `retry_in` time from Gemini error body
+- Character-by-character JSON backslash sanitizer (fixes LaTeX `\left`, `\{`, `\text` in JSON strings)
+- Truncated JSON repair for `finish_reason=length` responses
+- Per-chapter checkpointing with `--resume` support
+- `--limit N` flag for safe testing without burning quota
+- Empty content guard for thinking models
 - Can process from extracted markdown or raw JSON files
-- System prompt enforces: meaningful topic names (not "Part 1"), goal_tier assignment, mandatory `exact_source_quote`
+- System prompt enforces: meaningful topic names (not "Part 1"), goal_tier assignment, mandatory `exact_source_quote`, conciseness rules
 
 **LLM prompt rules:**
 
 - Each topic must have a descriptive name (e.g., "Quadratic Formula Derivation", not "Part 3")
-- `high_yield_score` assigned based on PYQ frequency heuristics
-- `est_minutes` assigned based on content complexity
-- Every content bullet must carry `exact_source_quote` from the source text
+- `goal_tier` assigned: CORE (basic definitions, high-frequency exam topics), STANDARD (application problems), ADVANCED (complex, rarely asked)
+- `est_minutes` assigned based on content complexity (5-30 range)
+- Every content block must carry `exact_source_quote` from the source text
+- Conciseness enforced: 2-4 summary bullets, 1-2 sentence `why_important`, 2-4 content blocks per topic
+
+**Rate limiting strategy:**
+
+- Default 6s pause between requests (conservative for 20 RPM free tier)
+- On 429: parse "Please retry in Xs" from Gemini response body, wait that + 5s buffer
+- Fallback: progressive backoff at 30s × attempt number
+- Up to 8 retries before skipping a chunk
+
+**Output:** `pipeline/output/structured/<subject>.json` — a `StructuredSubject` containing all chapters, topics, and content blocks
 
 #### Stage 04: Verify (`04_verify/verify_content.py`)
 
@@ -355,9 +392,15 @@ OUTPUT_DIR = PIPELINE_DIR / "output"
 CONTENT_DIR = ROOT_DIR / "content"
 BACKEND_DIR = ROOT_DIR / "backend"
 
-# API keys loaded from .env
+# API keys loaded from pipeline/.env
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
+CLAUDE_API_KEY   = os.getenv("CLAUDE_API_KEY")
+GROQ_API_KEY     = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY")
+
+# Gemini via OpenAI-compatible endpoint
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+GEMINI_MODEL    = "gemini-2.5-flash-lite"   # Stable, free tier, no thinking overhead
 
 # Subject registry
 SUBJECTS = {
@@ -389,19 +432,24 @@ cd ..
 # 4. Extract on Colab (copy extract_pdf.py cells to notebook)
 #    Download results to pipeline/output/extracted/maths-12/
 
-# 5. Structure content
-python -m 03_structure.structure_content --subject maths-12
+# 5. Download extracted markdown from Drive
+python download_from_drive.py
 
-# 6. Verify (anti-hallucination)
-python -m 04_verify.verify_content --subject maths-12
+# 6. Structure content (uses Gemini free tier)
+python 03_structure/structure_content.py --subject maths-12
+# For testing: python 03_structure/structure_content.py --subject maths-12 --limit 5
+# To resume:  python 03_structure/structure_content.py --subject maths-12 --resume
 
-# 7. Solve PYQs
-python -m 05_solve.solve_pyqs --subject maths-12
+# 7. Verify (anti-hallucination)
+python 04_verify/verify_content.py --subject maths-12
 
-# 8. Seed backend
-python -m 06_seed.seed_backend --subject maths-12
+# 8. Solve PYQs
+python 05_solve/solve_pyqs.py --subject maths-12
 
-# 9. Deploy
+# 9. Seed backend
+python 06_seed/seed_backend.py --subject maths-12
+
+# 10. Deploy
 cd ../backend && npx wrangler deploy
 ```
 
@@ -558,9 +606,10 @@ Single-page React app (`web/src/App.tsx` — ~1095 lines) with:
 ### 8.1 Prerequisites
 
 - **Node.js 18+** and **npm**
-- **Python 3.10+** and **pip**
-- **Google account** (for Colab PDF extraction)
-- **API keys**: DeepSeek V3, Claude (Anthropic)
+- **Python 3.10+** and **pip** (tested with 3.13)
+- **Google account** (for Colab PDF extraction and Drive storage)
+- **API keys**: Gemini (free tier, for Stage 03), Claude (Anthropic, for Stage 05)
+- **Optional**: DeepSeek V3 (alternative for Stage 03)
 
 ### 8.2 Local Development
 
@@ -640,14 +689,19 @@ Options:
 - [x] Smart plan generator with exam-date awareness
 - [x] Anti-hallucination verification pipeline
 - [x] Pydantic schemas as single source of truth
-- [ ] Run full pipeline for maths-12 (pending API keys + Colab extraction)
+- [x] Colab extraction notebook with memory management & image filtering
+- [x] Drive download helper script (`download_from_drive.py`)
+- [x] Gemini provider with smart 429 handling (retry_in parsing, backslash sanitizer)
+- [x] 19 chapters extracted to Markdown (Chapter 1-19, Chapter 20 empty in source)
+- [ ] Run full Stage 03 for maths-12 (421 chunks, ~63 min estimated)
+- [ ] Run Stages 04-06
 
 ### Phase 2: Content Quality
 
-- [ ] Process all 38 maths-12 lesson PDFs through pipeline
-- [ ] Solve all 6 PYQ papers (2019-2024)
+- [ ] Complete Stage 03 structuring for all 19 maths-12 chapters
+- [ ] Run Stage 04 verification — target 85%+ pass rate
+- [ ] Solve all 6 PYQ papers (2019-2024) via Stage 05
 - [ ] Map PYQ questions to topics
-- [ ] Verify 85%+ content passes anti-hallucination check
 - [ ] Generate Hindi and Hinglish content
 
 ### Phase 3: User Experience
@@ -677,16 +731,17 @@ Options:
 
 ## Key Design Decisions
 
-| Decision                         | Rationale                                                                                                  |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Bundled data, no DB**          | Cloudflare Workers have instant cold start — no round-trip to D1. Content is static until pipeline re-runs |
-| **Google Colab for extraction**  | User's machine lacks GPU for Docling. Colab provides free T4 GPU                                           |
-| **DeepSeek V3 for structuring**  | Best cost/quality ratio for structured JSON generation. ~$0.14/M input tokens                              |
-| **Claude for PYQ solving**       | Superior at step-by-step mathematical reasoning                                                            |
-| **exact_source_quote**           | Forces the structuring LLM to ground every claim in source text. Verification stage catches fabrications   |
-| **Numbered pipeline stages**     | Clear execution order, each stage independent with checkpointing — can resume mid-pipeline after failures  |
-| **TypeScript arrays**            | Zero latency at query time — just array.filter(). No ORM overhead, no connection pooling                   |
-| **Pydantic as schema authority** | Python pipeline produces the data, Pydantic enforces shape. TypeScript types mirror Pydantic models        |
+| Decision                         | Rationale                                                                                                                               |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Bundled data, no DB**          | Cloudflare Workers have instant cold start — no round-trip to D1. Content is static until pipeline re-runs                              |
+| **Google Colab for extraction**  | User's machine lacks GPU for Docling. Colab provides free T4/A100 GPU                                                                   |
+| **Gemini 2.5 Flash-Lite**        | Free tier, fastest model (2.7s/chunk), no thinking overhead, designed for high-volume at-scale usage. DeepSeek V3 available as fallback |
+| **OpenAI-compatible endpoint**   | Gemini's `/v1beta/openai` endpoint lets us use the same httpx code for any OpenAI-compatible provider                                   |
+| **Claude for PYQ solving**       | Superior at step-by-step mathematical reasoning                                                                                         |
+| **exact_source_quote**           | Forces the structuring LLM to ground every claim in source text. Verification stage catches fabrications                                |
+| **Numbered pipeline stages**     | Clear execution order, each stage independent with checkpointing — can resume mid-pipeline after failures                               |
+| **TypeScript arrays**            | Zero latency at query time — just array.filter(). No ORM overhead, no connection pooling                                                |
+| **Pydantic as schema authority** | Python pipeline produces the data, Pydantic enforces shape. TypeScript types mirror Pydantic models                                     |
 
 ---
 
