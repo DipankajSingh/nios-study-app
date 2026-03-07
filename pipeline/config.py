@@ -41,7 +41,7 @@ CLAUDE_MODEL      = "claude-sonnet-4-20250514"
 
 # Gemini via OpenAI-compatible endpoint
 GEMINI_BASE_URL   = "https://generativelanguage.googleapis.com/v1beta/openai"
-GEMINI_MODEL      = "gemini-2.5-flash"        # Stable, fast, cheap, JSON mode
+GEMINI_MODEL      = "gemini-2.5-flash-lite"   # Stable, free tier, fastest, no thinking overhead
 
 # ── Processing defaults ──────────────────────────────────────────────────────
 CHUNK_SIZE        = 3000      # chars per chunk sent to structuring API

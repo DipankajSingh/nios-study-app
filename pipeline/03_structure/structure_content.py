@@ -5,14 +5,16 @@ Stage 3 — Structure Content
 Takes the extracted Markdown (from Stage 2 / Colab) and calls an LLM API
 to produce structured JSON matching our Pydantic schemas.
 
-Supported providers: deepseek, gemini (default)
+Supported providers: gemini (default, flash-lite), gemini-flash, deepseek
 
 Usage:
     cd pipeline
     python 03_structure/structure_content.py --subject maths-12
     python 03_structure/structure_content.py --subject maths-12 --provider deepseek
+    python 03_structure/structure_content.py --subject maths-12 --provider gemini-flash
     python 03_structure/structure_content.py --subject maths-12 --dry-run
     python 03_structure/structure_content.py --subject maths-12 --resume
+    python 03_structure/structure_content.py --subject maths-12 --limit 5  # test first 5 chunks
 
 What it does for each chapter:
   1. Reads the extracted markdown file
@@ -22,7 +24,8 @@ What it does for each chapter:
   5. Writes a StructuredSubject JSON to output/structured/<subject>.json
 
 Rate limiting:
-  - Gemini free tier: 10 RPM → 6s pause between requests
+  - Gemini flash-lite free tier: 30 RPM → 4s pause between requests
+  - Gemini flash (thinking) free tier: 10 RPM → 6s pause
   - DeepSeek: generous limits → 2s pause
   - On 429 errors: progressive backoff (30s, 60s, 90s...)
 
@@ -88,15 +91,25 @@ PROVIDERS = {
     "gemini": {
         "base_url": GEMINI_BASE_URL,
         "api_key": GEMINI_API_KEY,
-        "model": GEMINI_MODEL,
-        "label": "Gemini 2.5 Flash",
-        "pause": 6.0,   # Free tier: 10 RPM ≈ 6s/req
+        "model": GEMINI_MODEL,   # gemini-2.5-flash-lite — fast, no thinking overhead
+        "label": "Gemini Flash-Lite",
+        "pause": 4.0,   # Free tier: 30 RPM → 2s safe, but 4s conservative
         "max_retries": 5,  # More retries for rate-limit recovery
+    },
+    "gemini-flash": {
+        "base_url": GEMINI_BASE_URL,
+        "api_key": GEMINI_API_KEY,
+        "model": "gemini-2.5-flash",   # Thinking model — higher quality, 2x slower
+        "label": "Gemini 2.5 Flash (thinking)",
+        "pause": 6.0,   # Free tier: 10 RPM → 6s/req
+        "max_retries": 5,
     },
 }
 
 # Active provider — set by main() based on --provider flag
 _active_provider: dict = PROVIDERS["deepseek"]
+_chunk_limit: int = 0  # 0 = no limit; set by --limit flag
+_chunks_processed: int = 0  # tracks total chunks processed
 
 def set_provider(name: str):
     global _active_provider
@@ -236,6 +249,46 @@ def _repair_truncated_json(text: str) -> dict | None:
     return None
 
 
+# ── JSON backslash fix ────────────────────────────────────────────────────────
+
+_VALID_JSON_ESCAPES = frozenset('"\\/bfnrtu')
+
+def _fix_json_backslashes(raw: str) -> str:
+    r"""Fix invalid JSON backslash escapes while preserving valid ones.
+
+    LLMs often produce LaTeX in JSON strings like \\left, \\{, \\text, etc.
+    which are invalid JSON escapes. This function correctly handles:
+      - \\left  (two chars \\ then left) -> kept as-is (valid JSON: literal backslash)
+      - \left   (one char \ then left) -> doubled to \\left (now valid JSON)
+      - \\\left (three chars) -> \\\\left (two valid pairs)
+
+    The key insight: valid JSON escape sequences consume TWO characters (\\ pair).
+    We walk the string, consuming pairs for valid escapes and doubling lone \.
+    """
+    out = []
+    i = 0
+    length = len(raw)
+    while i < length:
+        ch = raw[i]
+        if ch == '\\' and i + 1 < length:
+            next_ch = raw[i + 1]
+            if next_ch in _VALID_JSON_ESCAPES:
+                # Valid JSON escape — consume both characters
+                out.append(ch)
+                out.append(next_ch)
+                i += 2
+            else:
+                # Invalid escape (e.g. \l from \left, \{ from LaTeX)
+                # Double the backslash to make it a literal \ in JSON
+                out.append('\\')
+                out.append('\\')
+                i += 1  # Only advance past the backslash
+        else:
+            out.append(ch)
+            i += 1
+    return ''.join(out)
+
+
 # ── LLM API call ─────────────────────────────────────────────────────────────
 
 def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
@@ -293,7 +346,18 @@ def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
 
             raw_resp = resp.json()
             finish_reason = raw_resp["choices"][0].get("finish_reason", "unknown")
-            content = raw_resp["choices"][0]["message"]["content"]
+            content = raw_resp["choices"][0]["message"].get("content")
+
+            # Guard: thinking models may return empty content when max_tokens
+            # is too low (thinking tokens consume the budget first)
+            if not content:
+                last_error = f"Empty content (finish_reason={finish_reason})"
+                if attempt < max_retries:
+                    wait = 5 * attempt
+                    print(f"\n    ⚠️  {last_error}. Retrying in {wait}s...")
+                    time.sleep(wait)
+                    continue
+                raise RuntimeError(last_error)
 
             # Parse JSON from response (handle markdown fences)
             content = content.strip()
@@ -301,13 +365,13 @@ def call_structuring_api(chunk: str, subject: dict, pdf_name: str,
                 content = re.sub(r"^```(?:json)?\n?", "", content)
                 content = re.sub(r"\n?```$", "", content)
 
-            # Fix invalid JSON backslash escapes from LaTeX (e.g. \{ \} \, \; etc.)
+            # Fix invalid JSON backslash escapes from LaTeX (e.g. \left \{ \text)
             # Valid JSON escapes: \" \\ \/ \b \f \n \r \t \uXXXX
-            content = re.sub(
-                r'\\(?!["\\/bfnrtu])',
-                r'\\\\',
-                content,
-            )
+            # Regex approach FAILS on \\left (two chars: \,\,l,e,f,t) because
+            # it can't tell "second half of \\ pair" from "new invalid escape".
+            # Character-by-character correctly consumes \\ pairs then catches
+            # lone backslashes followed by invalid chars.
+            content = _fix_json_backslashes(content)
 
             try:
                 return json.loads(content)
@@ -376,6 +440,14 @@ def process_chapter(
     chapter_title = pdf_name  # Will be overridden by LLM
 
     for i, chunk in enumerate(chunks, 1):
+        # Respect --limit flag (global chunk counter)
+        if _chunk_limit > 0:
+            global _chunks_processed
+            if _chunks_processed >= _chunk_limit:
+                print(f"      ⏹️  Reached --limit {_chunk_limit}. Stopping.")
+                break
+            _chunks_processed += 1
+
         print(f"      Chunk {i}/{len(chunks)}...", end=" ", flush=True)
         try:
             result = call_structuring_api(chunk, subject_cfg, pdf_name, i, len(chunks))
@@ -464,6 +536,8 @@ def main():
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--provider", default="gemini", choices=list(PROVIDERS.keys()),
                         help="LLM provider to use (default: gemini)")
+    parser.add_argument("--limit", type=int, default=0,
+                        help="Max chunks to process (0 = all). For testing.")
     parser.add_argument("--extracted-dir", type=str, default=None,
                         help="Override extracted markdown directory")
     parser.add_argument("--dry-run", action="store_true",
@@ -484,7 +558,14 @@ def main():
         print(f"❌ {key_name} not set. Add it to pipeline/.env")
         sys.exit(1)
 
-    print(f"🤖 Provider: {prov['label']} ({prov['model']})")
+    # Set chunk limit for testing
+    global _chunk_limit, _chunks_processed
+    _chunk_limit = args.limit
+    _chunks_processed = 0
+
+    print(f"🤖 Provider: {prov['label']} | model: {prov['model']}")
+    if _chunk_limit:
+        print(f"🔢 Chunk limit: {_chunk_limit}")
 
     subject_cfg = SUBJECTS[args.subject]
     subject = Subject(
@@ -528,9 +609,9 @@ def main():
             chunks = chunk_text(text)
             total_chunks += len(chunks)
             print(f"  📄 {md_file.relative_to(extracted_dir)}: {len(text):,} chars → {len(chunks)} chunks")
-        est_time = total_chunks * prov.get("pause", RATE_LIMIT_PAUSE) + total_chunks * 15  # ~15s per API call
+        est_time = total_chunks * prov.get("pause", RATE_LIMIT_PAUSE) + total_chunks * 5  # ~5s per API call
         print(f"\n📊 Total: {len(md_files)} files, {total_chunks} chunks")
-        print(f"⏱️  Estimated time: ~{est_time / 60:.0f} min (at {prov.get('pause', RATE_LIMIT_PAUSE)}s pause + ~15s/API call)")
+        print(f"⏱️  Estimated time: ~{est_time / 60:.0f} min (at {prov.get('pause', RATE_LIMIT_PAUSE)}s pause + ~5s/API call)")
         return
 
     # Checkpoint
@@ -561,6 +642,11 @@ def main():
             done_chapters[ch_key] = chapter.model_dump()
             checkpoint_file.write_text(json.dumps(done_chapters, indent=2, default=str))
             print(f"    💾 Checkpoint saved ({len(done_chapters)} chapters)")
+
+        # Stop the whole pipeline if --limit reached
+        if _chunk_limit > 0 and _chunks_processed >= _chunk_limit:
+            print(f"\n⏹️  Global --limit {_chunk_limit} reached. Stopping pipeline.")
+            break
 
     # Write final output
     result = StructuredSubject(
