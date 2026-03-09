@@ -37,22 +37,6 @@ from config import SUBJECTS, CHAPTER_URLS_DIR
 BASE_URL = "https://nios.ac.in"
 URLS_DIR = CHAPTER_URLS_DIR
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-}
-
-# Subject page URLs — the NIOS page that lists all chapter PDF links for a subject
-SUBJECT_PAGES = {
-    "maths-12": "https://nios.ac.in/online-course-material/sr-secondary-courses/Mathematics-(311).aspx",
-    # Add more subjects here as needed:
-    # "physics-12": "https://nios.ac.in/online-course-material/sr-secondary-courses/Physics-(312).aspx",
-    # "chemistry-12": "https://nios.ac.in/online-course-material/sr-secondary-courses/Chemistry-(313).aspx",
-}
-
 
 # ── Scraping helpers (ported from 01_scrape/scrape_nios.py) ──────────────────
 
@@ -206,70 +190,80 @@ def main():
     parser = argparse.ArgumentParser(
         description="Scrape NIOS chapter PDF URLs and save for Kaggle notebook"
     )
-    parser.add_argument("--subject", required=True, help="Subject ID, e.g. maths-12")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--subject", help="Subject ID, e.g. maths-12")
+    group.add_argument(
+        "--all", action="store_true",
+        help="Process every subject in the registry",
+    )
     parser.add_argument(
         "--list-only", action="store_true",
         help="Print the URLs but do not save the JSON file",
     )
     args = parser.parse_args()
 
-    if args.subject not in SUBJECTS:
+    subjects_to_run = list(SUBJECTS.keys()) if args.all else [args.subject]
+
+    if not args.all and args.subject not in SUBJECTS:
         print(f"❌ Unknown subject '{args.subject}'. Known: {list(SUBJECTS.keys())}")
         sys.exit(1)
 
-    if args.subject not in SUBJECT_PAGES:
-        print(f"❌ No NIOS page configured for '{args.subject}'.")
-        print(f"   Add it to SUBJECT_PAGES in this script.")
-        sys.exit(1)
+    failed = []
+    for subject_id in subjects_to_run:
+        print(f"\n{'='*60}")
+        ok = _process_subject(subject_id, SUBJECTS[subject_id], args.list_only)
+        if not ok:
+            failed.append(subject_id)
 
-    subject_cfg = SUBJECTS[args.subject]
+    if args.all:
+        print(f"\n{'='*60}")
+        print(f"✅ Done: {len(subjects_to_run) - len(failed)}/{len(subjects_to_run)} subjects")
+        if failed:
+            print(f"❌ Failed: {', '.join(failed)}")
+
+
+def _process_subject(subject_id: str, subject_cfg: dict, list_only: bool) -> bool:
+    """Scrape one subject. Returns True on success."""
     subject_name = subject_cfg["name"]
-    subject_url = SUBJECT_PAGES[args.subject]
+    subject_url  = subject_cfg["nios_url"]
 
-    print(f"📐 Subject:  {subject_name} (Class {subject_cfg['class_level']})")
-    print(f"🌐 Page:     {subject_url}\n")
+    print(f"{subject_cfg['icon']}  {subject_name} ({subject_id}) — Class {subject_cfg['class_level']} — {subject_cfg['stream']}")
+    print(f"🌐 {subject_url}\n")
 
     chapters = get_chapter_pdfs(subject_url, subject_name)
 
     if not chapters:
-        print("❌ No chapter PDFs found. Check the subject URL and try again.")
-        sys.exit(1)
+        print(f"❌ No chapter PDFs found for {subject_id}. Check the URL.")
+        return False
 
     numbered = [c for c in chapters if c["name"].startswith("Chapter")]
-    extras = [c for c in chapters if not c["name"].startswith("Chapter")]
-    print(f"\n📚 Found {len(chapters)} chapter PDF(s):")
+    extras   = [c for c in chapters if not c["name"].startswith("Chapter")]
+    print(f"📚 {len(chapters)} chapter(s) found ({len(numbered)} numbered, {len(extras)} extra):")
     for c in chapters:
         print(f"  📄 {c['name']}")
         print(f"      {c['url']}")
 
-    if extras:
-        print(f"\n  ↳ {len(extras)} 'Extra' file(s) (unnumbered chapters)")
-
-    if args.list_only:
-        return
+    if list_only:
+        return True
 
     URLS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = URLS_DIR / f"{args.subject}.json"
+    out_path = URLS_DIR / f"{subject_id}.json"
 
     payload = {
-        "subject": args.subject,
+        "subject": subject_id,
         "subject_name": subject_name,
         "class_level": subject_cfg["class_level"],
         "code": subject_cfg["code"],
+        "stream": subject_cfg["stream"],
         "source_url": subject_url,
         "chapters": chapters,
     }
-
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
 
-    print(f"\n✅ Saved {len(chapters)} URLs → {out_path}")
-    print(f"\n   Next steps:")
-    print(f"   1. Upload this config to Kaggle:")
-    print(f"      python 02_extract/upload_to_kaggle.py --subject {args.subject} --username <you> --urls-only")
-    print(f"   2. Open the Kaggle notebook and run it.")
-    print(f"   3. After the notebook finishes:")
-    print(f"      python 02_extract/download_from_kaggle.py --subject {args.subject} --dataset <you>/nios-{args.subject}-extracted")
+    print(f"✅ Saved {len(chapters)} URLs → {out_path}")
+    print(f"   Next: python 02_extract/upload_to_kaggle.py --subject {subject_id}")
+    return True
 
 
 if __name__ == "__main__":

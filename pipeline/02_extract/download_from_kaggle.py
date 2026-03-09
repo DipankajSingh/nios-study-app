@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stage 2d — Download marker-extracted JSON from Kaggle Dataset
+Stage 2d — Download marker-extracted JSON from Kaggle Datasets
 
 Downloads the marker-pdf extracted chapter JSON files from a Kaggle dataset
 (produced by the Kaggle extraction notebook) to the local
@@ -15,16 +15,17 @@ Expected Kaggle dataset structure (produced by extract_pdf_kaggle.ipynb):
     └── _manifest.json
 
 Authentication:
-  Requires ~/.kaggle/kaggle.json with {"username": "...", "key": "..."}
+  Set KAGGLE_API_TOKEN and KAGGLE_USERNAME in pipeline/.env
   Get your token at: https://www.kaggle.com/settings → API → Create New Token
 
 Usage:
     cd pipeline
+    # Single subject (--dataset required):
     python 02_extract/download_from_kaggle.py --subject maths-12 --dataset <username>/nios-maths-12-extracted
-    python 02_extract/download_from_kaggle.py --subject maths-12 --dataset <username>/nios-maths-12-extracted --resume
 
-The CLI downloads the whole dataset as a zip and unpacks it, so --resume skips
-the entire download if all expected files are already present.
+    # All subjects (dataset slugs auto-derived from KAGGLE_USERNAME):
+    python 02_extract/download_from_kaggle.py --all
+    python 02_extract/download_from_kaggle.py --all --resume
 """
 
 import argparse
@@ -34,7 +35,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import EXTRACTED_DIR, SUBJECTS, ensure_dirs
+from config import EXTRACTED_DIR, KAGGLE_USERNAME, SUBJECTS, ensure_dirs
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -55,58 +56,87 @@ def main():
     parser = argparse.ArgumentParser(
         description="Download marker-extracted chapter JSON files from Kaggle"
     )
-    parser.add_argument("--subject", required=True, help="Subject ID, e.g. maths-12")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--subject", help="Subject ID, e.g. maths-12")
+    group.add_argument(
+        "--all", action="store_true",
+        help="Download extracted JSON for every subject in the registry",
+    )
     parser.add_argument(
-        "--dataset", required=True,
-        help="Kaggle dataset ID in the form <username>/<dataset-slug>",
+        "--dataset",
+        help="Kaggle dataset ID (<username>/<slug>). Required with --subject; auto-derived with --all.",
     )
     parser.add_argument(
         "--resume", action="store_true",
-        help="Skip the download if all JSON files are already present locally",
+        help="Skip subjects whose output directory already has JSON files",
     )
     args = parser.parse_args()
 
     check_kaggle_cli()
     ensure_dirs()
 
-    if args.subject not in SUBJECTS:
-        print(f"❌ Unknown subject '{args.subject}'. Known: {list(SUBJECTS.keys())}")
-        sys.exit(1)
+    if args.all:
+        if args.dataset:
+            print("⚠️  --dataset is ignored when --all is used (dataset is auto-derived per subject)")
+        if not KAGGLE_USERNAME:
+            print("❌ KAGGLE_USERNAME not set. Add it to pipeline/.env")
+            sys.exit(1)
+        subjects_to_run = list(SUBJECTS.keys())
+    else:
+        if args.subject not in SUBJECTS:
+            print(f"❌ Unknown subject '{args.subject}'. Known: {list(SUBJECTS.keys())}")
+            sys.exit(1)
+        if not args.dataset:
+            print("❌ --dataset is required when using --subject")
+            sys.exit(1)
+        subjects_to_run = [args.subject]
 
-    local_output = EXTRACTED_DIR / args.subject
+    failed = []
+    for subject_id in subjects_to_run:
+        print(f"\n{'='*60}")
+        dataset_id = f"{KAGGLE_USERNAME}/nios-{subject_id}-extracted" if args.all else args.dataset
+        ok = _download_subject(subject_id, dataset_id, args.resume)
+        if not ok:
+            failed.append(subject_id)
+
+    if args.all:
+        print(f"\n{'='*60}")
+        print(f"✅ Done: {len(subjects_to_run) - len(failed)}/{len(subjects_to_run)} subjects downloaded")
+        if failed:
+            print(f"❌ Failed: {', '.join(failed)}")
+
+
+def _download_subject(subject_id: str, dataset_id: str, resume: bool) -> bool:
+    """Download extracted JSON for one subject. Returns True on success."""
+    local_output = EXTRACTED_DIR / subject_id
     local_output.mkdir(parents=True, exist_ok=True)
 
-    # --resume: skip if output dir already has JSON files
-    if args.resume:
+    if resume:
         existing = list(local_output.glob("*.json"))
         if existing:
             print(f"⏭️  Resume: {len(existing)} JSON file(s) already in {local_output}")
             print("   Delete the directory or omit --resume to re-download.")
-            return
+            return True
 
-    print(f"📥 Downloading dataset: {args.dataset}")
+    print(f"📥 Downloading dataset: {dataset_id}")
     print(f"📂 Destination:        {local_output}\n")
 
-    # kaggle datasets download unpacks the zip directly into --path
     with tempfile.TemporaryDirectory() as tmp:
         result = subprocess.run(
             [
                 "kaggle", "datasets", "download",
-                args.dataset,
+                dataset_id,
                 "--path", tmp,
                 "--unzip",
             ]
         )
         if result.returncode != 0:
             print("❌ kaggle CLI download failed.")
-            sys.exit(result.returncode)
+            return False
 
-        # Move all files from temp into the output directory
-        downloaded = list(Path(tmp).glob("**/*"))
-        files = [f for f in downloaded if f.is_file()]
-        for src in files:
-            dest = local_output / src.name
-            src.replace(dest)
+        for src in Path(tmp).glob("**/*"):
+            if src.is_file():
+                src.replace(local_output / src.name)
 
     json_files = sorted(local_output.glob("*.json"))
     total_kb = sum(f.stat().st_size for f in json_files) / 1024
@@ -117,7 +147,8 @@ def main():
         print(f"  📄 {f.name}")
 
     print(f"\n   Next step:")
-    print(f"   python 03_structure/structure_content.py --subject {args.subject} --dry-run")
+    print(f"   python 03_structure/structure_content.py --subject {subject_id} --dry-run")
+    return True
 
 
 if __name__ == "__main__":

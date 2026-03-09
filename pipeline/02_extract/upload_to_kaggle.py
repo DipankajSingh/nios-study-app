@@ -1,31 +1,20 @@
 #!/usr/bin/env python3
 """
-Stage 2c — Upload Chapter URLs config (or PDFs) to a Kaggle Dataset
+Stage 2c — Upload Chapter URL configs to Kaggle Datasets
 
-Two upload modes:
-
-  default (recommended)
-    Uploads the tiny chapter_urls/<subject>.json produced by
-    generate_chapter_urls.py.  The Kaggle notebook reads this JSON and
-    downloads the PDFs directly from NIOS — no local PDF storage needed.
-    Dataset slug: nios-<subject>-urls
-
-  --pdfs
-    Uploads the locally stored chapter PDFs instead.
-    Useful if NIOS blocks downloads inside Kaggle's environment.
-    Dataset slug: nios-<subject>-pdfs
+Uploads the tiny chapter_urls/<subject>.json produced by
+generate_chapter_urls.py.  The Kaggle notebook reads this JSON and
+downloads the PDFs directly from NIOS — no local PDF storage needed.
+Dataset slug: nios-<subject>-urls
 
 Authentication:
-  Requires ~/.kaggle/kaggle.json with {"username": "...", "key": "..."}
+  Set KAGGLE_API_TOKEN and KAGGLE_USERNAME in pipeline/.env
   Get your token at: https://www.kaggle.com/settings → API → Create New Token
 
 Usage:
     cd pipeline
-    # Recommended — upload the small URLs config file:
-    python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you>
-
-    # Fallback — upload the raw PDFs:
-    python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you> --pdfs
+    python 02_extract/upload_to_kaggle.py --subject maths-12
+    python 02_extract/upload_to_kaggle.py --all
 
 After the upload, open extract_pdf_kaggle.ipynb on Kaggle and add the
 dataset as input, then run the notebook.
@@ -91,17 +80,18 @@ def kaggle_upload(staging_dir: Path, dataset_id: str, version_notes: str, is_new
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Upload chapter URL config (or PDFs) to a Kaggle dataset"
+        description="Upload chapter URL configs to Kaggle datasets"
     )
-    parser.add_argument("--subject", required=True, help="Subject ID, e.g. maths-12")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--subject", help="Subject ID, e.g. maths-12")
+    group.add_argument(
+        "--all", action="store_true",
+        help="Upload URL configs for every subject in the registry",
+    )
     parser.add_argument(
         "--username",
         default=KAGGLE_USERNAME or None,
         help="Kaggle username (default: KAGGLE_USERNAME from .env)",
-    )
-    parser.add_argument(
-        "--pdfs", action="store_true",
-        help="Upload raw PDF files instead of the URL config (fallback mode)",
     )
     parser.add_argument(
         "--public", action="store_true",
@@ -113,7 +103,7 @@ def main():
     )
     parser.add_argument(
         "--dataset-slug",
-        help="Override the auto-generated slug",
+        help="Override the auto-generated slug (ignored with --all)",
     )
     args = parser.parse_args()
 
@@ -124,16 +114,24 @@ def main():
     check_kaggle_cli()
     ensure_dirs()
 
-    if args.subject not in SUBJECTS:
+    subjects_to_run = list(SUBJECTS.keys()) if args.all else [args.subject]
+
+    if not args.all and args.subject not in SUBJECTS:
         print(f"❌ Unknown subject '{args.subject}'. Known: {list(SUBJECTS.keys())}")
         sys.exit(1)
 
-    subject_cfg = SUBJECTS[args.subject]
+    failed = []
+    for subject_id in subjects_to_run:
+        print(f"\n{'='*60}")
+        ok = _upload_urls(subject_id, SUBJECTS[subject_id], args)
+        if not ok:
+            failed.append(subject_id)
 
-    if args.pdfs:
-        _upload_pdfs(args, subject_cfg)
-    else:
-        _upload_urls(args, subject_cfg)
+    if args.all:
+        print(f"\n{'='*60}")
+        print(f"✅ Done: {len(subjects_to_run) - len(failed)}/{len(subjects_to_run)} subjects uploaded")
+        if failed:
+            print(f"❌ Failed: {', '.join(failed)}")
 
 
 def _stage_and_upload(staging_dir: Path, dataset_id: str, metadata: dict, args):
@@ -150,19 +148,19 @@ def _stage_and_upload(staging_dir: Path, dataset_id: str, metadata: dict, args):
     return slug
 
 
-def _upload_urls(args, subject_cfg):
-    """Upload the small chapter_urls/<subject>.json config file."""
-    urls_file = URLS_DIR / f"{args.subject}.json"
+def _upload_urls(subject_id: str, subject_cfg: dict, args) -> bool:
+    """Upload the small chapter_urls/<subject>.json config file. Returns True on success."""
+    urls_file = URLS_DIR / f"{subject_id}.json"
     if not urls_file.exists():
         print(f"❌ URL config not found: {urls_file}")
-        print(f"   Run first: python 01_scrape/generate_chapter_urls.py --subject {args.subject}")
-        sys.exit(1)
+        print(f"   Run first: python 01_scrape/generate_chapter_urls.py --subject {subject_id}")
+        return False
 
     with open(urls_file) as f:
         url_data = json.load(f)
     chapter_count = len(url_data.get("chapters", []))
 
-    slug = args.dataset_slug or f"nios-{args.subject}-urls"
+    slug = (args.dataset_slug if not args.all else None) or f"nios-{subject_id}-urls"
     dataset_id = f"{args.username}/{slug}"
 
     print(f"📋 Subject:    {subject_cfg['name']} (Class {subject_cfg['class_level']})")
@@ -177,50 +175,13 @@ def _upload_urls(args, subject_cfg):
             "id": dataset_id,
             "licenses": [{"name": "other"}],
         }
-        slug = _stage_and_upload(tmp_path, dataset_id, metadata, args)
+        _stage_and_upload(tmp_path, dataset_id, metadata, args)
 
     print(f"\n   In your Kaggle notebook:")
     print(f"   1. Add dataset '{dataset_id}' as input")
-    print(f"   2. Set SUBJECT = \"{args.subject}\" in the config cell")
-    print(f"   3. Input path: /kaggle/input/{slug}/{args.subject}.json")
-
-
-def _upload_pdfs(args, subject_cfg):
-    """Upload raw chapter PDFs (fallback if NIOS blocks Kaggle downloads)."""
-    pdf_dir = subject_cfg["pdf_dir"]
-    if not pdf_dir.exists():
-        print(f"❌ PDF directory not found: {pdf_dir}")
-        sys.exit(1)
-
-    pdfs = sorted(pdf_dir.glob("*.pdf"))
-    if not pdfs:
-        print(f"❌ No PDF files found in: {pdf_dir}")
-        sys.exit(1)
-
-    slug = args.dataset_slug or f"nios-{args.subject}-pdfs"
-    dataset_id = f"{args.username}/{slug}"
-
-    print(f"📋 Subject:    {subject_cfg['name']} (Class {subject_cfg['class_level']})")
-    print(f"📂 Source:     {pdf_dir}")
-    print(f"📄 PDFs found: {len(pdfs)}")
-    print(f"🗄️  Dataset:    {dataset_id}\n")
-    for pdf in pdfs:
-        print(f"  📄 {pdf.name} ({pdf.stat().st_size / 1024:.0f} KB)")
-    print()
-
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        for pdf in pdfs:
-            shutil.copy2(pdf, tmp_path / pdf.name)
-        metadata = {
-            "title": f"NIOS {subject_cfg['name']} Class {subject_cfg['class_level']} PDFs",
-            "id": dataset_id,
-            "licenses": [{"name": "other"}],
-        }
-        slug = _stage_and_upload(tmp_path, dataset_id, metadata, args)
-
-    print(f"\n   In your Kaggle notebook, add this dataset as input:")
-    print(f"   Input path: /kaggle/input/{slug}/")
+    print(f"   2. Set SUBJECT = \"{subject_id}\" in the config cell")
+    print(f"   3. Input path: /kaggle/input/{slug}/{subject_id}.json")
+    return True
 
 
 if __name__ == "__main__":

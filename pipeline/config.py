@@ -48,21 +48,61 @@ CHUNK_OVERLAP     = 200       # overlap between chunks
 RATE_LIMIT_PAUSE  = 2.0       # seconds between API calls
 MAX_RETRIES       = 3
 
-# ── Subject registry ────────────────────────────────────────────────────────
-# Maps subject IDs to their content directories and PDF code prefixes.
-# Add new subjects here as you scrape them.
+# ── Subject registry ─────────────────────────────────────────────────────────
+# Single source of truth for every NIOS subject the app will support.
+# Fields:
+#   name        — human-readable subject name
+#   class_level — "10" or "12"
+#   code        — NIOS subject code
+#   stream      — Science | Commerce | Humanities | Languages | Vocational
+#   icon        — emoji shown in the app UI
+#   nios_url    — NIOS page that lists all chapter PDF links
+#   pyq_dir     — local path for past-year question PDFs (Stage 5)
+
+def _s(name, level, code, stream, icon, url_slug):
+    """Build a subject entry. url_slug is the path segment in the NIOS URL."""
+    base = (
+        "sr-secondary-courses" if level == "12" else "secondary-courses"
+    )
+    return {
+        "name": name,
+        "class_level": level,
+        "code": code,
+        "stream": stream,
+        "icon": icon,
+        "nios_url": f"https://nios.ac.in/online-course-material/{base}/{url_slug}.aspx",
+        "pyq_dir": CONTENT_DIR / f"class{level}" / f"{name.lower().replace(' ', '-')}-{level}" / "pyqs_raw",
+    }
+
+
 SUBJECTS = {
-    "maths-12": {
-        "name": "Mathematics",
-        "class_level": "12",
-        "code": "311",
-        "icon": "📐",
-        "pdf_dir": CONTENT_DIR / "class12" / "maths-12" / "pdfs",
-        "pyq_dir": CONTENT_DIR / "class12" / "maths-12" / "pyqs_raw",
-    },
-    # Add more subjects as they are scraped:
-    # "english-12": { ... },
-    # "physics-12": { ... },
+    # ── Class 12 — Science ───────────────────────────────────────────────────
+    "maths-12":      _s("Mathematics",       "12", "311", "Science",    "📐", "Mathematics-(311)"),
+    "physics-12":    _s("Physics",            "12", "312", "Science",    "⚛️",  "Physics-(312)"),
+    "chemistry-12":  _s("Chemistry",          "12", "313", "Science",    "🧪", "Chemistry-(313)"),
+    "biology-12":    _s("Biology",            "12", "314", "Science",    "🧬", "Biology-(314)"),
+    "cs-12":         _s("Computer Science",   "12", "330", "Science",    "💻", "Computer-Science-(330)"),
+    # ── Class 12 — Commerce ──────────────────────────────────────────────────
+    "economics-12":  _s("Economics",          "12", "318", "Commerce",   "📊", "Economics-(318)"),
+    "business-12":   _s("Business Studies",   "12", "319", "Commerce",   "🏢", "Business-Studies-(319)"),
+    "accountancy-12":_s("Accountancy",        "12", "320", "Commerce",   "🧾", "Accountancy-(320)"),
+    # ── Class 12 — Humanities ────────────────────────────────────────────────
+    "history-12":    _s("History",            "12", "315", "Humanities", "🏛️",  "History-(315)"),
+    "geography-12":  _s("Geography",          "12", "316", "Humanities", "🌍", "Geography-(316)"),
+    "polsci-12":     _s("Political Science",  "12", "317", "Humanities", "🗳️",  "Political-Science-(317)"),
+    "psychology-12": _s("Psychology",         "12", "328", "Humanities", "🧠", "Psychology-(328)"),
+    "sociology-12":  _s("Sociology",          "12", "331", "Humanities", "👥", "Sociology-(331)"),
+    # ── Class 12 — Languages ─────────────────────────────────────────────────
+    "english-12":    _s("English",            "12", "302", "Languages",  "🔤", "English-(302)"),
+    "hindi-12":      _s("Hindi",              "12", "301", "Languages",  "🔤", "Hindi-(301)"),
+    # ── Class 10 — Core ──────────────────────────────────────────────────────
+    "maths-10":      _s("Mathematics",        "10", "211", "Science",    "📐", "Mathematics-(211)"),
+    "science-10":    _s("Science",            "10", "212", "Science",    "🔬", "Science-and-Technology-(212)"),
+    "social-sci-10": _s("Social Science",     "10", "213", "Humanities", "🌐", "Social-Science-(213)"),
+    "economics-10":  _s("Economics",          "10", "214", "Commerce",   "📊", "Economics-(214)"),
+    "business-10":   _s("Business Studies",   "10", "215", "Commerce",   "🏢", "Business-Studies-(215)"),
+    "english-10":    _s("English",            "10", "202", "Languages",  "🔤", "English-(202)"),
+    "hindi-10":      _s("Hindi",              "10", "201", "Languages",  "🔤", "Hindi-(201)"),
 }
 
 
