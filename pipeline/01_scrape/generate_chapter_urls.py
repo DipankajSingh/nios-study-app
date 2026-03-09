@@ -37,6 +37,14 @@ from config import SUBJECTS, CHAPTER_URLS_DIR
 BASE_URL = "https://nios.ac.in"
 URLS_DIR = CHAPTER_URLS_DIR
 
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+}
+
 
 # ── Scraping helpers (ported from 01_scrape/scrape_nios.py) ──────────────────
 
