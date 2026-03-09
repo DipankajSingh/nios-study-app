@@ -92,13 +92,18 @@ def _is_english_chapter(text: str, href: str, subject_name: str) -> bool:
                 return False
 
     exclusions = [
+        # Non-chapter documents
         "tma", "assignment", "syllabus", "sample paper", "question paper",
         "curriculum", "practical", "guidelines", "bifurcation", "worksheet",
         "ws-", "ws_", "learner guide", "first page", "inst.pdf", "(tma)",
         "contents", "content-", "index", "front page",
+        # Lab manuals
         "lab manual", "laboratory manual", "lab_manual", "lab-manual",
+        # Site-wide administrative/circular PDFs that appear on every subject page
         "aicte", "circular", "equivalency", "government order", "govt. order",
-        "frequently asked questions", "faq",
+        "frequently asked questions", "faq", "vocational education programme",
+        "employment in public services", "recognition of national institute",
+        "tamil nadu", "admission in aicte",
     ]
     if any(ex in text_lower or ex in href_lower for ex in exclusions):
         return False
@@ -124,18 +129,25 @@ def _extract_chapter_number(text: str, href: str):
     text_lower = text.lower()
     basename = os.path.basename(href).lower()
 
-    for pattern in [
-        r"\b(?:lesson|chapter|l)[-_ ]*(\d+)",
-        r"\b(?:lesson|chapter|l)[-_ ]*(\d+)",
-    ]:
-        for src in [text_lower, basename]:
-            m = re.search(pattern, src)
-            if m:
-                return int(m.group(1))
+    # Pattern 1: word-bounded "Lesson N", "Chapter N", "L-N" — handles "Lesson 1", "L-4NF"
+    for src in [text_lower, basename]:
+        m = re.search(r"\b(?:lesson|chapter|l)[-_ ]*(\d+)", src)
+        if m:
+            return int(m.group(1))
 
+    # Pattern 2: no word boundary — handles "3Lesson-38" (digit prefix) and
+    # "_lesson38" (underscore prefix, which is \w so \b never fires there)
+    for src in [text_lower, basename]:
+        m = re.search(r"(?<![a-zA-Z])(?:lesson|chapter)[-_ ]*(\d+)", src)
+        if m:
+            return int(m.group(1))
+
+    # Pattern 3: text starts with a number, e.g. "1 - Sets", "02 . Matrix"
     m = re.match(r"^(\d+)[ \-:\.]", text_lower)
     if m:
         return int(m.group(1))
+
+    # Pattern 4: text is just a bare number, e.g. "12"
     m = re.match(r"^(\d+)$", text_lower.strip())
     if m:
         return int(m.group(1))
