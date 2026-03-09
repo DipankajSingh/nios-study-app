@@ -22,38 +22,31 @@ Usage:
     cd pipeline
     python 02_extract/download_from_kaggle.py --subject maths-12 --dataset <username>/nios-maths-12-extracted
     python 02_extract/download_from_kaggle.py --subject maths-12 --dataset <username>/nios-maths-12-extracted --resume
+
+The CLI downloads the whole dataset as a zip and unpacks it, so --resume skips
+the entire download if all expected files are already present.
 """
 
 import argparse
-import shutil
+import subprocess
 import sys
 import tempfile
-import time
-import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import EXTRACTED_DIR, SUBJECTS, ensure_dirs
 
 
-# ── Kaggle auth ───────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-def get_kaggle_api():
-    try:
-        from kaggle.api.kaggle_api_extended import KaggleApiExtended
-    except ImportError:
-        print("❌ kaggle package not installed. Run: pip install kaggle")
-        sys.exit(1)
-
-    api = KaggleApiExtended()
-    try:
-        api.authenticate()
-    except Exception as e:
-        print(f"❌ Kaggle authentication failed: {e}")
-        print("   Create ~/.kaggle/kaggle.json with your API credentials.")
+def check_kaggle_cli():
+    """Abort with a helpful message if the kaggle CLI is not available."""
+    result = subprocess.run(["kaggle", "--version"], capture_output=True)
+    if result.returncode != 0:
+        print("❌ kaggle CLI not found. Run: pip install kaggle")
+        print("   Then add ~/.kaggle/kaggle.json with your API credentials.")
         print("   Get your key at: https://www.kaggle.com/settings → API → Create New Token")
         sys.exit(1)
-    return api
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -69,10 +62,11 @@ def main():
     )
     parser.add_argument(
         "--resume", action="store_true",
-        help="Skip files that already exist locally",
+        help="Skip the download if all JSON files are already present locally",
     )
     args = parser.parse_args()
 
+    check_kaggle_cli()
     ensure_dirs()
 
     if args.subject not in SUBJECTS:
@@ -82,102 +76,48 @@ def main():
     local_output = EXTRACTED_DIR / args.subject
     local_output.mkdir(parents=True, exist_ok=True)
 
-    print(f"🔑 Authenticating with Kaggle...")
-    api = get_kaggle_api()
+    # --resume: skip if output dir already has JSON files
+    if args.resume:
+        existing = list(local_output.glob("*.json"))
+        if existing:
+            print(f"⏭️  Resume: {len(existing)} JSON file(s) already in {local_output}")
+            print("   Delete the directory or omit --resume to re-download.")
+            return
 
-    print(f"\n🔍 Checking dataset: {args.dataset}")
-    try:
-        file_list = api.dataset_list_files(args.dataset)
-        files = file_list.files if hasattr(file_list, "files") else []
-    except Exception as e:
-        print(f"❌ Cannot access dataset '{args.dataset}': {e}")
-        print("   Check the dataset ID and that you have access to it.")
-        sys.exit(1)
+    print(f"📥 Downloading dataset: {args.dataset}")
+    print(f"📂 Destination:        {local_output}\n")
 
-    if not files:
-        print("❌ Dataset is empty or has no accessible files.")
-        sys.exit(1)
-
-    print(f"\n📚 Found {len(files)} file(s) in dataset:")
-    for f in sorted(files, key=lambda x: x.name):
-        size_kb = (f.totalBytes or 0) / 1024
-        print(f"  📄 {f.name} ({size_kb:.1f} KB)")
-
-    # Partition into skip / download lists
-    skipped = []
-    to_download = []
-    for f in files:
-        dest = local_output / f.name
-        if args.resume and dest.exists():
-            skipped.append(f.name)
-        else:
-            to_download.append(f)
-
-    if skipped:
-        print(f"\n⏭️  Skipping {len(skipped)} already-present file(s)")
-
-    if not to_download:
-        print("\n✅ Nothing to download — all files already present.")
-        return
-
-    print(f"\n📂 Downloading {len(to_download)} file(s) to: {local_output}\n")
-
-    stats = {"downloaded": 0, "failed": 0, "bytes": 0}
-
-    # Download each file into a temp dir then move to avoid partial writes
+    # kaggle datasets download unpacks the zip directly into --path
     with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
+        result = subprocess.run(
+            [
+                "kaggle", "datasets", "download",
+                args.dataset,
+                "--path", tmp,
+                "--unzip",
+            ]
+        )
+        if result.returncode != 0:
+            print("❌ kaggle CLI download failed.")
+            sys.exit(result.returncode)
 
-        for f in sorted(to_download, key=lambda x: x.name):
-            dest = local_output / f.name
-            size_kb = (f.totalBytes or 0) / 1024
-            print(f"  📥 {f.name} ({size_kb:.1f} KB)")
+        # Move all files from temp into the output directory
+        downloaded = list(Path(tmp).glob("**/*"))
+        files = [f for f in downloaded if f.is_file()]
+        for src in files:
+            dest = local_output / src.name
+            src.replace(dest)
 
-            try:
-                api.dataset_download_file(
-                    args.dataset,
-                    f.name,
-                    path=str(tmp_path),
-                    quiet=True,
-                    force=True,
-                )
+    json_files = sorted(local_output.glob("*.json"))
+    total_kb = sum(f.stat().st_size for f in json_files) / 1024
 
-                tmp_file = tmp_path / f.name
+    print(f"\n✅ {len(json_files)} JSON file(s) saved to: {local_output}")
+    print(f"   Total size: {total_kb:.0f} KB")
+    for f in json_files:
+        print(f"  📄 {f.name}")
 
-                # Kaggle sometimes wraps the file in a zip
-                if not tmp_file.exists():
-                    tmp_zip = tmp_path / (f.name + ".zip")
-                    if tmp_zip.exists():
-                        with zipfile.ZipFile(tmp_zip) as z:
-                            z.extractall(tmp_path)
-                        tmp_zip.unlink()
-
-                if tmp_file.exists():
-                    shutil.move(str(tmp_file), str(dest))
-                    stats["downloaded"] += 1
-                    stats["bytes"] += f.totalBytes or 0
-                else:
-                    print(f"  ⚠️  File not found in download response: {f.name}")
-                    stats["failed"] += 1
-
-            except Exception as e:
-                print(f"  ❌ Failed to download {f.name}: {e}")
-                stats["failed"] += 1
-
-            time.sleep(0.1)  # gentle rate limit
-
-    total_mb = stats["bytes"] / (1024 * 1024)
-    print(f"\n{'─' * 50}")
-    print(f"  ✅ Downloaded: {stats['downloaded']}")
-    print(f"  ⏭️  Skipped:    {len(skipped)}")
-    print(f"  ❌ Failed:     {stats['failed']}")
-    print(f"  📦 Total:      {total_mb:.1f} MB")
-    print(f"{'─' * 50}")
-    print(f"\n📂 Files saved to: {local_output}")
-
-    if stats["failed"] == 0:
-        print(f"\n   Next step:")
-        print(f"   python 03_structure/structure_content.py --subject {args.subject} --dry-run")
+    print(f"\n   Next step:")
+    print(f"   python 03_structure/structure_content.py --subject {args.subject} --dry-run")
 
 
 if __name__ == "__main__":

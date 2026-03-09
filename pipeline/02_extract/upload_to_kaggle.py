@@ -4,7 +4,7 @@ Stage 2c — Upload Chapter URLs config (or PDFs) to a Kaggle Dataset
 
 Two upload modes:
 
-  --urls-only  (default / recommended)
+  default (recommended)
     Uploads the tiny chapter_urls/<subject>.json produced by
     generate_chapter_urls.py.  The Kaggle notebook reads this JSON and
     downloads the PDFs directly from NIOS — no local PDF storage needed.
@@ -23,7 +23,6 @@ Usage:
     cd pipeline
     # Recommended — upload the small URLs config file:
     python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you>
-    python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you> --urls-only
 
     # Fallback — upload the raw PDFs:
     python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you> --pdfs
@@ -35,6 +34,7 @@ dataset as input, then run the notebook.
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -45,35 +45,46 @@ from config import SUBJECTS, ensure_dirs
 URLS_DIR = Path(__file__).resolve().parent / "chapter_urls"
 
 
-# ── Kaggle auth ───────────────────────────────────────────────────────────────
-
-def get_kaggle_api():
-    try:
-        from kaggle.api.kaggle_api_extended import KaggleApiExtended
-    except ImportError:
-        print("❌ kaggle package not installed. Run: pip install kaggle")
-        sys.exit(1)
-
-    api = KaggleApiExtended()
-    try:
-        api.authenticate()
-    except Exception as e:
-        print(f"❌ Kaggle authentication failed: {e}")
-        print("   Create ~/.kaggle/kaggle.json with your API credentials.")
-        print("   Get your key at: https://www.kaggle.com/settings → API → Create New Token")
-        sys.exit(1)
-    return api
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def dataset_exists(api, dataset_id: str) -> bool:
+def check_kaggle_cli():
+    """Abort with a helpful message if the kaggle CLI is not available."""
+    result = subprocess.run(["kaggle", "--version"], capture_output=True)
+    if result.returncode != 0:
+        print("❌ kaggle CLI not found. Run: pip install kaggle")
+        print("   Then add ~/.kaggle/kaggle.json with your API credentials.")
+        print("   Get your key at: https://www.kaggle.com/settings → API → Create New Token")
+        sys.exit(1)
+
+
+def dataset_exists(dataset_id: str) -> bool:
     """Return True if the Kaggle dataset already exists."""
-    try:
-        api.dataset_list_files(dataset_id)
-        return True
-    except Exception:
-        return False
+    result = subprocess.run(
+        ["kaggle", "datasets", "files", dataset_id],
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
+def kaggle_upload(staging_dir: Path, dataset_id: str, version_notes: str, is_new: bool, public: bool):
+    """Create or update a Kaggle dataset from staging_dir."""
+    if is_new:
+        cmd = ["kaggle", "datasets", "create", "-p", str(staging_dir)]
+        if public:
+            cmd.append("--public")
+        print(f"📤 Creating new {'public' if public else 'private'} dataset: {dataset_id}")
+    else:
+        cmd = [
+            "kaggle", "datasets", "version",
+            "-p", str(staging_dir),
+            "-m", version_notes,
+        ]
+        print(f"📤 Updating existing dataset: {dataset_id}")
+
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        print("❌ kaggle CLI returned a non-zero exit code.")
+        sys.exit(result.returncode)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -102,9 +113,7 @@ def main():
     )
     args = parser.parse_args()
 
-    # --pdfs overrides the default --urls-only
-    upload_pdfs = args.pdfs
-
+    check_kaggle_cli()
     ensure_dirs()
 
     if args.subject not in SUBJECTS:
@@ -113,10 +122,24 @@ def main():
 
     subject_cfg = SUBJECTS[args.subject]
 
-    if upload_pdfs:
+    if args.pdfs:
         _upload_pdfs(args, subject_cfg)
     else:
         _upload_urls(args, subject_cfg)
+
+
+def _stage_and_upload(staging_dir: Path, dataset_id: str, metadata: dict, args):
+    """Write dataset-metadata.json into staging_dir and push to Kaggle."""
+    with open(staging_dir / "dataset-metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    is_new = not dataset_exists(dataset_id)
+    kaggle_upload(staging_dir, dataset_id, args.version_notes, is_new, args.public)
+
+    slug = dataset_id.split("/")[1]
+    print(f"\n✅ Done!")
+    print(f"   Dataset URL: https://www.kaggle.com/datasets/{dataset_id}")
+    return slug
 
 
 def _upload_urls(args, subject_cfg):
@@ -138,41 +161,16 @@ def _upload_urls(args, subject_cfg):
     print(f"📄 URL config: {urls_file} ({chapter_count} chapters)")
     print(f"🗄️  Dataset:    {dataset_id}\n")
 
-    api = get_kaggle_api()
-
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         shutil.copy2(urls_file, tmp_path / urls_file.name)
-
         metadata = {
             "title": f"NIOS {subject_cfg['name']} Class {subject_cfg['class_level']} — Chapter URLs",
             "id": dataset_id,
             "licenses": [{"name": "other"}],
         }
-        with open(tmp_path / "dataset-metadata.json", "w") as f:
-            json.dump(metadata, f, indent=2)
+        slug = _stage_and_upload(tmp_path, dataset_id, metadata, args)
 
-        exists = dataset_exists(api, dataset_id)
-        if exists:
-            print(f"📤 Updating existing dataset: {dataset_id}")
-            api.dataset_create_version(
-                str(tmp_path),
-                version_notes=args.version_notes,
-                quiet=False,
-                dir_mode="zip",
-            )
-        else:
-            visibility = "public" if args.public else "private"
-            print(f"📤 Creating new {visibility} dataset: {dataset_id}")
-            api.dataset_create_new(
-                str(tmp_path),
-                public=args.public,
-                quiet=False,
-                dir_mode="zip",
-            )
-
-    print(f"\n✅ Done!")
-    print(f"   Dataset URL: https://www.kaggle.com/datasets/{dataset_id}")
     print(f"\n   In your Kaggle notebook:")
     print(f"   1. Add dataset '{dataset_id}' as input")
     print(f"   2. Set SUBJECT = \"{args.subject}\" in the config cell")
@@ -198,48 +196,21 @@ def _upload_pdfs(args, subject_cfg):
     print(f"📂 Source:     {pdf_dir}")
     print(f"📄 PDFs found: {len(pdfs)}")
     print(f"🗄️  Dataset:    {dataset_id}\n")
-
     for pdf in pdfs:
-        size_kb = pdf.stat().st_size / 1024
-        print(f"  📄 {pdf.name} ({size_kb:.0f} KB)")
+        print(f"  📄 {pdf.name} ({pdf.stat().st_size / 1024:.0f} KB)")
     print()
-
-    api = get_kaggle_api()
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         for pdf in pdfs:
             shutil.copy2(pdf, tmp_path / pdf.name)
-
         metadata = {
             "title": f"NIOS {subject_cfg['name']} Class {subject_cfg['class_level']} PDFs",
             "id": dataset_id,
             "licenses": [{"name": "other"}],
         }
-        with open(tmp_path / "dataset-metadata.json", "w") as f:
-            json.dump(metadata, f, indent=2)
+        slug = _stage_and_upload(tmp_path, dataset_id, metadata, args)
 
-        exists = dataset_exists(api, dataset_id)
-        if exists:
-            print(f"📤 Updating existing dataset: {dataset_id}")
-            api.dataset_create_version(
-                str(tmp_path),
-                version_notes=args.version_notes,
-                quiet=False,
-                dir_mode="zip",
-            )
-        else:
-            visibility = "public" if args.public else "private"
-            print(f"📤 Creating new {visibility} dataset: {dataset_id}")
-            api.dataset_create_new(
-                str(tmp_path),
-                public=args.public,
-                quiet=False,
-                dir_mode="zip",
-            )
-
-    print(f"\n✅ Done!")
-    print(f"   Dataset URL: https://www.kaggle.com/datasets/{dataset_id}")
     print(f"\n   In your Kaggle notebook, add this dataset as input:")
     print(f"   Input path: /kaggle/input/{slug}/")
 
