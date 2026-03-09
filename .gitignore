@@ -50,4 +50,4 @@ pipeline/token_readonly.json
 # Pipeline scraper outputs (generated — do not commit)
 pipeline/01_scrape/subjects_*.json
 pipeline/01_scrape/downloads_registry.json
-pipeline/02_extract/chapter_urls/
+pipeline/01_scrape/chapter_urls/

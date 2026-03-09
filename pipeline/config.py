@@ -14,15 +14,12 @@ CONTENT_DIR = ROOT_DIR / "content"
 BACKEND_DIR = ROOT_DIR / "backend"
 
 # Pipeline I/O directories
-OUTPUT_DIR       = PIPELINE_DIR / "output"
-EXTRACTED_DIR    = OUTPUT_DIR / "extracted"     # Markdown from Colab/docling
-STRUCTURED_DIR   = OUTPUT_DIR / "structured"   # JSON from DeepSeek
-VERIFIED_DIR     = OUTPUT_DIR / "verified"     # Verified clean JSON
-SOLVED_DIR       = OUTPUT_DIR / "solved"       # PYQs with solutions
-
-# ── Credentials (Google OAuth — shared across pipeline stages) ───────────────
-CREDENTIALS_FILE = PIPELINE_DIR / "credentials.json"
-TOKEN_FILE       = PIPELINE_DIR / "token.json"
+OUTPUT_DIR        = PIPELINE_DIR / "output"
+CHAPTER_URLS_DIR  = PIPELINE_DIR / "01_scrape" / "chapter_urls"  # Stage 1 output
+EXTRACTED_DIR     = OUTPUT_DIR / "extracted"    # marker-pdf JSONs from Kaggle
+STRUCTURED_DIR    = OUTPUT_DIR / "structured"   # JSON from DeepSeek
+VERIFIED_DIR      = OUTPUT_DIR / "verified"     # Verified clean JSON
+SOLVED_DIR        = OUTPUT_DIR / "solved"       # PYQs with solutions
 
 # ── Environment ──────────────────────────────────────────────────────────────
 load_dotenv(PIPELINE_DIR / ".env")
@@ -69,7 +66,7 @@ SUBJECTS = {
 
 def ensure_dirs():
     """Create all output directories if they don't exist."""
-    for d in [EXTRACTED_DIR, STRUCTURED_DIR, VERIFIED_DIR, SOLVED_DIR]:
+    for d in [CHAPTER_URLS_DIR, EXTRACTED_DIR, STRUCTURED_DIR, VERIFIED_DIR, SOLVED_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
 

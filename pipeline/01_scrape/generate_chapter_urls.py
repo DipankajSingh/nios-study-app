@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-Stage 2a — Generate Chapter PDF URLs for a Subject
+Stage 1 — Generate Chapter PDF URLs for a Subject
 
 Scrapes the NIOS website for a given subject and saves the chapter PDF URLs
-to a JSON config file. This config is then uploaded to Kaggle as a tiny
-dataset so the Kaggle extraction notebook can download the PDFs directly
-from NIOS — no local PDF storage or Google Drive needed.
+to a JSON config file. This config is uploaded to Kaggle as a tiny dataset
+so the Kaggle extraction notebook can download the PDFs directly from NIOS —
+no local PDF storage or Google Drive needed.
 
 Output:
-    pipeline/02_extract/chapter_urls/<subject>.json
+    pipeline/01_scrape/chapter_urls/<subject>.json
 
-That JSON is then uploaded to Kaggle via:
-    python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you> --urls-only
+Next step — upload the URLs JSON to Kaggle:
+    python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you>
 
 Usage:
     cd pipeline
-    python 02_extract/generate_chapter_urls.py --subject maths-12
-    python 02_extract/generate_chapter_urls.py --subject maths-12 --list-only
+    python 01_scrape/generate_chapter_urls.py --subject maths-12
+    python 01_scrape/generate_chapter_urls.py --subject maths-12 --list-only
 """
 
 import argparse
@@ -32,10 +32,10 @@ import requests
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import SUBJECTS
+from config import SUBJECTS, CHAPTER_URLS_DIR
 
 BASE_URL = "https://nios.ac.in"
-URLS_DIR = Path(__file__).resolve().parent / "chapter_urls"
+URLS_DIR = CHAPTER_URLS_DIR
 
 HEADERS = {
     "User-Agent": (

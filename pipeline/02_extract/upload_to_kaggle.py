@@ -40,9 +40,9 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import SUBJECTS, ensure_dirs
+from config import SUBJECTS, CHAPTER_URLS_DIR, ensure_dirs
 
-URLS_DIR = Path(__file__).resolve().parent / "chapter_urls"
+URLS_DIR = CHAPTER_URLS_DIR
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -147,7 +147,7 @@ def _upload_urls(args, subject_cfg):
     urls_file = URLS_DIR / f"{args.subject}.json"
     if not urls_file.exists():
         print(f"❌ URL config not found: {urls_file}")
-        print(f"   Run first: python 02_extract/generate_chapter_urls.py --subject {args.subject}")
+        print(f"   Run first: python 01_scrape/generate_chapter_urls.py --subject {args.subject}")
         sys.exit(1)
 
     with open(urls_file) as f:
