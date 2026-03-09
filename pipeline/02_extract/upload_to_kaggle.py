@@ -85,12 +85,8 @@ def main():
     parser.add_argument("--subject", required=True, help="Subject ID, e.g. maths-12")
     parser.add_argument("--username", required=True, help="Your Kaggle username")
     parser.add_argument(
-        "--urls-only", action="store_true", default=True,
-        help="Upload the chapter_urls/<subject>.json config (default, recommended)",
-    )
-    parser.add_argument(
         "--pdfs", action="store_true",
-        help="Upload raw PDF files instead of the URL config",
+        help="Upload raw PDF files instead of the URL config (fallback mode)",
     )
     parser.add_argument(
         "--public", action="store_true",

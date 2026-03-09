@@ -36,12 +36,13 @@ This project is a NIOS-focused last‑minute study assistant. It builds PYQ-base
   - Static JSON data bundled in worker (no database yet).
 - Pipeline:
   - Python 3.13 with Pydantic v2 for data validation.
-  - Docling v2 on Google Colab for PDF extraction.
+  - marker-pdf on Kaggle (T4 GPU, 30h/week) for PDF extraction.
   - Gemini 2.5 Flash-Lite (free tier) for content structuring.
   - Claude (planned) for PYQ solving.
 - Infrastructure:
-  - Google Drive for PDF storage and extraction output.
-  - Google Colab (free GPU) for PDF processing.
+  - Google Drive for raw PDF storage (Stage 01 scraper output).
+  - Kaggle datasets for chapter URL configs and marker JSON output.
+  - Kaggle (30h/week free T4 GPU) for PDF processing.
 
 ## Running the Web App
 
@@ -76,15 +77,17 @@ cp .env.example .env   # Add your API keys (GEMINI_API_KEY required for Stage 03
 
 ### Pipeline Stages
 
-| Stage            | What it does                        | Command                                                       |
-| ---------------- | ----------------------------------- | ------------------------------------------------------------- |
-| **01 Scrape**    | Download NIOS PDFs → Google Drive   | `cd 01_scrape && python scrape_nios.py`                       |
-| **02 Extract**   | PDF → Markdown (Colab + Docling)    | Open notebook in Colab with GPU                               |
-| **Download**     | Get extracted Markdown from Drive   | `python download_from_drive.py`                               |
-| **03 Structure** | Markdown → structured JSON (Gemini) | `python 03_structure/structure_content.py --subject maths-12` |
-| **04 Verify**    | Anti-hallucination check            | `python 04_verify/verify_content.py --subject maths-12`       |
-| **05 Solve**     | PYQ extraction + solutions (Claude) | `python 05_solve/solve_pyqs.py --subject maths-12`            |
-| **06 Seed**      | JSON → TypeScript for backend       | `python 06_seed/seed_backend.py --subject maths-12`           |
+| Stage            | What it does                              | Command                                                                                                    |
+| ---------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **01 Scrape**    | Download NIOS PDFs → Google Drive         | `cd pipeline/01_scrape && python scrape_nios.py`                                                           |
+| **02a URLs**     | Scrape chapter URLs from NIOS             | `python 02_extract/generate_chapter_urls.py --subject maths-12`                                            |
+| **02b Upload**   | Upload URL config to Kaggle               | `python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you>`                                |
+| **02c Extract**  | PDF → JSON on Kaggle (marker-pdf, T4 GPU) | Open `extract_pdf_kaggle.ipynb` on Kaggle — add URL dataset as input, enable GPU + Internet, run all cells |
+| **02d Download** | Pull extracted JSON from Kaggle           | `python 02_extract/download_from_kaggle.py --subject maths-12 --dataset <you>/nios-maths-12-extracted`     |
+| **03 Structure** | JSON → structured JSON (Gemini)           | `python 03_structure/structure_content.py --subject maths-12`                                              |
+| **04 Verify**    | Anti-hallucination check                  | `python 04_verify/verify_content.py --subject maths-12`                                                    |
+| **05 Solve**     | PYQ extraction + solutions (Claude)       | `python 05_solve/solve_pyqs.py --subject maths-12`                                                         |
+| **06 Seed**      | JSON → TypeScript for backend             | `python 06_seed/seed_backend.py --subject maths-12`                                                        |
 
 ### Stage 03 Options
 
@@ -105,11 +108,15 @@ python 03_structure/structure_content.py --subject maths-12 --provider gemini-fl
 ### Current Progress (maths-12)
 
 - [x] 19 chapters scraped and uploaded to Google Drive
-- [x] 19 chapters extracted to Markdown via Colab (Chapter 20 empty in source)
-- [x] Markdown downloaded to `pipeline/output/extracted/maths-12/`
+- [x] Chapter URLs scraped and saved (`chapter_urls/maths-12.json`)
+- [ ] Extract chapters via Kaggle notebook (marker-pdf JSON output)
+- [ ] Download extracted JSONs to `pipeline/output/extracted/maths-12/`
 - [x] Stage 03 code production-ready (Gemini 2.5 Flash-Lite, smart 429 handling)
-- [ ] Stage 03 full run (421 chunks, ~63 min estimated)
-- [ ] Stages 04-06
+- [ ] Stage 03 full run
+- [ ] Stages 04–06
+
+> **Branch note:** Kaggle+marker extraction is on the `kaggle-marker` branch.
+> Fallback to Colab+Docling: `git checkout master`
 
 ## Running the App
 

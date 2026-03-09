@@ -43,8 +43,8 @@ Build a **mobile-first study companion** for NIOS (National Institute of Open Sc
 │                                                             │
 │  01_scrape → 02_extract → 03_structure → 04_verify          │
 │      ↓           ↓            ↓              ↓              │
-│  NIOS PDFs   Markdown     Structured      Verified          │
-│  → Drive    (Colab+Docling) JSON (Gemini)  JSON             │
+│  NIOS PDFs     JSON        Structured      Verified          │
+│  → Drive   (Kaggle+marker) JSON (Gemini)   JSON             │
 │                                              ↓              │
 │                              05_solve → 06_seed             │
 │                              PYQ sols   TypeScript          │
@@ -95,10 +95,13 @@ nios-study-app/
 │   │   ├── credentials.json    ← Google OAuth (gitignored)
 │   │   └── token.json          ← Auto-generated auth token (gitignored)
 │   │
-│   ├── 02_extract/             ← PDF → Markdown (Google Colab + Docling)
-│   │   └── NIOS_PDF_Extraction.ipynb
+│   ├── 02_extract/             ← PDF → Typed JSON (Kaggle + marker-pdf)
+│   │   ├── generate_chapter_urls.py   ← Scrape NIOS for chapter PDF URLs
+│   │   ├── upload_to_kaggle.py        ← Upload URL config to Kaggle dataset
+│   │   ├── extract_pdf_kaggle.ipynb   ← Kaggle notebook: download + extract
+│   │   ├── download_from_kaggle.py    ← Pull extracted JSON from Kaggle
+│   │   └── download_from_drive.py     ← (legacy) Download Markdown from Drive
 │   │
-│   ├── download_from_drive.py  ← Download extracted Markdown from Drive
 │   │
 │   ├── 03_structure/           ← Markdown → structured JSON (Gemini)
 │   │   └── structure_content.py
@@ -163,14 +166,14 @@ nios-study-app/
 
 The pipeline transforms raw NIOS PDFs into structured, verified study content. Each stage has its own directory, CLI entry point, and checkpoint system for resumability.
 
-| Stage            | Script                 | Input                    | Output              | Runs On          |
-| ---------------- | ---------------------- | ------------------------ | ------------------- | ---------------- |
-| **01 Scrape**    | `scrape_nios.py`       | NIOS website             | PDFs → Google Drive | Local            |
-| **02 Extract**   | Colab notebook         | PDFs (from Drive)        | Markdown files      | **Google Colab** |
-| **03 Structure** | `structure_content.py` | Markdown                 | Structured JSON     | Local (Gemini)   |
-| **04 Verify**    | `verify_content.py`    | Structured JSON + source | Verified JSON       | Local            |
-| **05 Solve**     | `solve_pyqs.py`        | PYQ papers               | Solved PYQ JSON     | Local (API)      |
-| **06 Seed**      | `seed_backend.py`      | Verified JSON + PYQs     | TypeScript file     | Local            |
+| Stage            | Script                     | Input                    | Output              | Runs On             |
+| ---------------- | -------------------------- | ------------------------ | ------------------- | ------------------- |
+| **01 Scrape**    | `scrape_nios.py`           | NIOS website             | PDFs → Google Drive | Local               |
+| **02 Extract**   | `extract_pdf_kaggle.ipynb` | NIOS website (direct)    | JSON (typed blocks) | **Kaggle** (T4 GPU) |
+| **03 Structure** | `structure_content.py`     | Markdown                 | Structured JSON     | Local (Gemini)      |
+| **04 Verify**    | `verify_content.py`        | Structured JSON + source | Verified JSON       | Local               |
+| **05 Solve**     | `solve_pyqs.py`            | PYQ papers               | Solved PYQ JSON     | Local (API)         |
+| **06 Seed**      | `seed_backend.py`          | Verified JSON + PYQs     | TypeScript file     | Local               |
 
 ### 4.2 Data Models (schemas.py)
 
@@ -250,29 +253,42 @@ This scrapes the NIOS course listing pages and writes `subjects_10.json` / `subj
 - `subjects_12.json` / `subjects_10.json` — subject URLs
 - `downloads_registry.json` — upload tracking (reset when clearing Drive)
 
-#### Stage 02: Extract (Google Colab notebook)
+#### Stage 02: Extract (Kaggle notebook + marker-pdf)
 
-Converts PDFs to structured Markdown using **Docling v2** on Google Colab GPU (T4/A100). The notebook is at `pipeline/02_extract/NIOS_PDF_Extraction.ipynb`.
+Downloads chapter PDFs directly from NIOS and converts them to **typed JSON blocks** using **marker-pdf** on a Kaggle T4 GPU. No Google Drive or local PDF storage needed.
 
-**Colab workflow:**
+**Workflow:**
 
-1. Open the notebook in Google Colab (GPU runtime required)
-2. Mount Google Drive — reads PDFs from the scraper's Drive folder
-3. Run all cells — processes each chapter PDF to Markdown
-4. Results saved to Google Drive under `NIOS_Extracted/`
-5. Download to local: `python pipeline/download_from_drive.py` → saves to `pipeline/output/extracted/`
+```bash
+# Step 1 — scrape chapter URLs from NIOS (local, ~30s)
+cd pipeline
+python 02_extract/generate_chapter_urls.py --subject maths-12
+# → writes pipeline/02_extract/chapter_urls/maths-12.json
+
+# Step 2 — upload the tiny URL config to Kaggle (5 KB)
+python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you>
+# → creates Kaggle dataset: <you>/nios-maths-12-urls
+
+# Step 3 — run extract_pdf_kaggle.ipynb on Kaggle
+# Add nios-maths-12-urls as input dataset, enable GPU + Internet, run all cells
+# PDFs downloaded directly from NIOS inside Kaggle; marker-pdf extracts JSON
+
+# Step 4 — download the extracted JSON locally
+python 02_extract/download_from_kaggle.py --subject maths-12 \
+  --dataset <you>/nios-maths-12-extracted
+# → saves Chapter N.json to pipeline/output/extracted/maths-12/
+```
+
+**marker JSON block types:** `Section-header`, `Text`, `Equation`, `Table`, `Figure`, `List-item`
+
+This enables **section-aware chunking** in Stage 03 — group all blocks under a `Section-header` together rather than arbitrary character-count splits that can cut mid-equation.
 
 **Key features:**
 
-- Checkpointing via `_extraction_checkpoint.json` (resumes mid-batch)
-- Manifest file lists all extracted files with metadata
-- Memory management: periodic `gc.collect()` + `torch.cuda.empty_cache()` for stable Colab runs
-- Image filtering: skips low-information images (<5KB, extreme aspect ratios)
-- Handles tables, equations, diagrams via Docling's `TableFormerMode.ACCURATE`
-
-**Download helper** (`pipeline/download_from_drive.py`):
-
-Downloads all extracted Markdown from Google Drive to the local `output/extracted/` directory, organizing by chapter. Requires `credentials.json` from Stage 01.
+- Checkpointing via `RESUME = True` (skips already-downloaded PDFs and already-extracted chapters)
+- `_manifest.json` lists all extracted files with sizes
+- Fallback: `upload_to_kaggle.py --pdfs` uploads raw PDFs as a dataset if NIOS blocks Kaggle downloads
+- Legacy: `download_from_drive.py` still available if falling back to Colab+Docling (branch: `master`)
 
 #### Stage 03: Structure (`03_structure/structure_content.py`)
 
