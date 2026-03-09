@@ -24,10 +24,12 @@ SOLVED_DIR        = OUTPUT_DIR / "solved"       # PYQs with solutions
 # ── Environment ──────────────────────────────────────────────────────────────
 load_dotenv(PIPELINE_DIR / ".env")
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-CLAUDE_API_KEY   = os.getenv("CLAUDE_API_KEY", "")
-GROQ_API_KEY     = os.getenv("GROQ_API_KEY", "")
-GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
+DEEPSEEK_API_KEY  = os.getenv("DEEPSEEK_API_KEY", "")
+CLAUDE_API_KEY    = os.getenv("CLAUDE_API_KEY", "")
+GROQ_API_KEY      = os.getenv("GROQ_API_KEY", "")
+GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "")
+KAGGLE_USERNAME   = os.getenv("KAGGLE_USERNAME", "")
+KAGGLE_API_TOKEN  = os.getenv("KAGGLE_API_TOKEN", "")
 
 # ── API endpoints ────────────────────────────────────────────────────────────
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"

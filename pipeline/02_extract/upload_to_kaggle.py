@@ -40,7 +40,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import SUBJECTS, CHAPTER_URLS_DIR, ensure_dirs
+from config import SUBJECTS, CHAPTER_URLS_DIR, KAGGLE_USERNAME, ensure_dirs
 
 URLS_DIR = CHAPTER_URLS_DIR
 
@@ -94,7 +94,11 @@ def main():
         description="Upload chapter URL config (or PDFs) to a Kaggle dataset"
     )
     parser.add_argument("--subject", required=True, help="Subject ID, e.g. maths-12")
-    parser.add_argument("--username", required=True, help="Your Kaggle username")
+    parser.add_argument(
+        "--username",
+        default=KAGGLE_USERNAME or None,
+        help="Kaggle username (default: KAGGLE_USERNAME from .env)",
+    )
     parser.add_argument(
         "--pdfs", action="store_true",
         help="Upload raw PDF files instead of the URL config (fallback mode)",
@@ -112,6 +116,10 @@ def main():
         help="Override the auto-generated slug",
     )
     args = parser.parse_args()
+
+    if not args.username:
+        print("❌ Kaggle username not set. Add KAGGLE_USERNAME=<you> to pipeline/.env or pass --username <you>")
+        sys.exit(1)
 
     check_kaggle_cli()
     ensure_dirs()
