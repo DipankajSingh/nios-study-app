@@ -10,6 +10,9 @@ google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
 
+# Stage 2: Kaggle dataset upload/download
+kaggle
+
 # Stage 2: PDF extraction (install in Colab, NOT locally)
 # docling[vlm]
 
