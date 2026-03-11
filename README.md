@@ -81,13 +81,48 @@ cp .env.example .env   # Add your API keys (GEMINI_API_KEY required for Stage 03
 | ---------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | **01 Scrape**    | Download NIOS PDFs → Google Drive         | `cd pipeline/01_scrape && python scrape_nios.py`                                                           |
 | **02a URLs**     | Scrape chapter URLs from NIOS             | `python 02_extract/generate_chapter_urls.py --subject maths-12`                                            |
-| **02b Upload**   | Upload URL config to Kaggle               | `python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you>`                                |
-| **02c Extract**  | PDF → JSON on Kaggle (marker-pdf, T4 GPU) | Open `extract_pdf_kaggle.ipynb` on Kaggle — add URL dataset as input, enable GPU + Internet, run all cells |
-| **02d Download** | Pull extracted JSON from Kaggle           | `python 02_extract/download_from_kaggle.py --subject maths-12 --dataset <you>/nios-maths-12-extracted`     |
+| **02b Local PDFs (optional)** | Download chapter PDFs locally in a structured folder | `python 02_extract/download_chapters_local.py --subject maths-12 --resume`                                  |
+| **02c Upload**   | Upload URL config to Kaggle               | `python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you>`                                |
+| **02d Extract**  | PDF → JSON on Kaggle (marker-pdf, T4 GPU) | Open `extract_pdf_kaggle.ipynb` on Kaggle — add URL dataset as input, enable GPU + Internet, run all cells |
+| **02e Download** | Pull extracted JSON from Kaggle           | `python 02_extract/download_from_kaggle.py --subject maths-12 --dataset <you>/nios-maths-12-extracted`     |
 | **03 Structure** | JSON → structured JSON (Gemini)           | `python 03_structure/structure_content.py --subject maths-12`                                              |
 | **04 Verify**    | Anti-hallucination check                  | `python 04_verify/verify_content.py --subject maths-12`                                                    |
 | **05 Solve**     | PYQ extraction + solutions (Claude)       | `python 05_solve/solve_pyqs.py --subject maths-12`                                                         |
 | **06 Seed**      | JSON → TypeScript for backend             | `python 06_seed/seed_backend.py --subject maths-12`                                                        |
+
+### Optional: Download Chapters Locally Before Kaggle
+
+If you want local PDFs before using Kaggle:
+
+```bash
+cd pipeline
+# interactive: select class → stream → subjects
+python 02_extract/download_chapters_local.py
+
+# or non-interactively:
+python 02_extract/download_chapters_local.py --subject maths-12
+```
+
+This creates:
+
+```text
+pipeline/output/pdfs/
+  class12/
+    maths-12/
+      chapters/
+        Chapter 1.pdf
+        ...
+      _manifest.json
+  _registry.json
+```
+
+If you prefer uploading PDFs as a Kaggle dataset manually:
+
+```bash
+kaggle datasets init -p pipeline/output/pdfs/class12/maths-12/chapters
+# edit generated dataset-metadata.json
+kaggle datasets create -p pipeline/output/pdfs/class12/maths-12/chapters
+```
 
 ### Stage 03 Options
 

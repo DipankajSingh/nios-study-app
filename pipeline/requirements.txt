@@ -6,15 +6,12 @@ python-dotenv
 # Stage 1: Scraping
 requests
 beautifulsoup4
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
 
 # Stage 2: Kaggle dataset upload/download
 kaggle
 
-# Stage 2: PDF extraction (install in Colab, NOT locally)
-# docling[vlm]
+# Stage 2: PDF extraction (install in Kaggle notebook, NOT locally)
+# marker-pdf
 
 # Stage 3-5: API calls
 httpx

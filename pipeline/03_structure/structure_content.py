@@ -2,7 +2,7 @@
 """
 Stage 3 — Structure Content
 
-Takes the extracted Markdown (from Stage 2 / Colab) and calls an LLM API
+Takes the extracted Markdown (from Stage 2 / Kaggle) and calls an LLM API
 to produce structured JSON matching our Pydantic schemas.
 
 Supported providers: gemini (default, flash-lite), gemini-flash, deepseek
@@ -613,7 +613,7 @@ def main():
             _process_from_raw_json(raw_json, subject, subject_cfg, args)
             return
         print(f"❌ No extracted data found at {extracted_dir}")
-        print(f"   Run Stage 2 (Colab extraction) first, then place output in {extracted_dir}")
+        print(f"   Run Stage 2 (Kaggle extraction) first, then place output in {extracted_dir}")
         sys.exit(1)
 
     # Find markdown files

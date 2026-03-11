@@ -35,7 +35,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import SUBJECTS, CHAPTER_URLS_DIR
 
 BASE_URL = "https://nios.ac.in"
-URLS_DIR = CHAPTER_URLS_DIR
 
 HEADERS = {
     "User-Agent": (
@@ -254,8 +253,8 @@ def _process_subject(subject_id: str, subject_cfg: dict, list_only: bool) -> boo
     if list_only:
         return True
 
-    URLS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = URLS_DIR / f"{subject_id}.json"
+    CHAPTER_URLS_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = CHAPTER_URLS_DIR / f"{subject_id}.json"
 
     payload = {
         "subject": subject_id,

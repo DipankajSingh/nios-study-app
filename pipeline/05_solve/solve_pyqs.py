@@ -193,7 +193,7 @@ def read_pyq_paper(pyq_file: Path) -> tuple[str, str, str]:
         data = json.loads(pyq_file.read_text())
         return json.dumps(data), year, session
     elif pyq_file.suffix == ".pdf":
-        print(f"    ⚠️  PDF PYQs need extraction first. Run extract_pdf.py in Colab with PYQ PDFs.")
+        print(f"    ⚠️  PDF PYQs need extraction first. Run the Kaggle extraction notebook with PYQ PDFs.")
         print(f"    ⚠️  Or manually create a .txt file with the extracted text.")
         return "", year, session
     else:
@@ -229,7 +229,7 @@ def main():
     pyq_files = sorted(list(pyq_dir.glob("*.txt")) + list(pyq_dir.glob("*.pdf")))
     if not pyq_files:
         print(f"❌ No PYQ files found in {pyq_dir}")
-        print(f"   Place PYQ text files as .txt (or .pdf for Colab extraction)")
+        print(f"   Place PYQ text files as .txt (or .pdf for Kaggle extraction)")
         sys.exit(1)
 
     print(f"📝 PYQ Solver: {subject_cfg['name']} ({args.subject})")

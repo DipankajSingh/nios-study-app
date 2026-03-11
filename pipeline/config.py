@@ -16,6 +16,7 @@ BACKEND_DIR = ROOT_DIR / "backend"
 # Pipeline I/O directories
 OUTPUT_DIR        = PIPELINE_DIR / "output"
 CHAPTER_URLS_DIR  = PIPELINE_DIR / "01_scrape" / "chapter_urls"  # Stage 1 output
+PDF_OUTPUT_ROOT   = OUTPUT_DIR / "pdfs"         # local chapter PDFs (Stage 2b)
 EXTRACTED_DIR     = OUTPUT_DIR / "extracted"    # marker-pdf JSONs from Kaggle
 STRUCTURED_DIR    = OUTPUT_DIR / "structured"   # JSON from DeepSeek
 VERIFIED_DIR      = OUTPUT_DIR / "verified"     # Verified clean JSON
@@ -96,19 +97,20 @@ SUBJECTS = {
     "english-12":    _s("English",            "12", "302", "Languages",  "🔤", "English-(302)"),
     "hindi-12":      _s("Hindi",              "12", "301", "Languages",  "🔤", "Hindi-(301)"),
     # ── Class 10 — Core ──────────────────────────────────────────────────────
-    "maths-10":      _s("Mathematics",        "10", "211", "Science",    "📐", "Mathematics-(211)"),
-    "science-10":    _s("Science",            "10", "212", "Science",    "🔬", "Science-and-Technology-(212)"),
-    "social-sci-10": _s("Social Science",     "10", "213", "Humanities", "🌐", "Social-Science-(213)"),
-    "economics-10":  _s("Economics",          "10", "214", "Commerce",   "📊", "Economics-(214)"),
-    "business-10":   _s("Business Studies",   "10", "215", "Commerce",   "🏢", "Business-Studies-(215)"),
-    "english-10":    _s("English",            "10", "202", "Languages",  "🔤", "English-(202)"),
-    "hindi-10":      _s("Hindi",              "10", "201", "Languages",  "🔤", "Hindi-(201)"),
+    # Note: Class 10 NIOS pages use a "-Syllabus" suffix in the URL slug.
+    "maths-10":      _s("Mathematics",        "10", "211", "Science",    "📐", "Mathematics-(211)-Syllabus"),
+    "science-10":    _s("Science",            "10", "212", "Science",    "🔬", "Science-and-Technology-(212)-Syllabus"),
+    "social-sci-10": _s("Social Science",     "10", "213", "Humanities", "🌐", "Social-Science-(213)-Syllabus"),
+    "economics-10":  _s("Economics",          "10", "214", "Commerce",   "📊", "economics-(214)-syllabus"),
+    "business-10":   _s("Business Studies",   "10", "215", "Commerce",   "🏢", "business-studies-(215)-syllabus"),
+    "english-10":    _s("English",            "10", "202", "Languages",  "🔤", "english-(202)-syllabus"),
+    "hindi-10":      _s("Hindi",              "10", "201", "Languages",  "🔤", "hindi-(201)-syllabus"),
 }
 
 
 def ensure_dirs():
     """Create all output directories if they don't exist."""
-    for d in [CHAPTER_URLS_DIR, EXTRACTED_DIR, STRUCTURED_DIR, VERIFIED_DIR, SOLVED_DIR]:
+    for d in [CHAPTER_URLS_DIR, PDF_OUTPUT_ROOT, EXTRACTED_DIR, STRUCTURED_DIR, VERIFIED_DIR, SOLVED_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
 
