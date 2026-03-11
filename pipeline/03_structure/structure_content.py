@@ -208,6 +208,35 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) 
     return [c for c in chunks if len(c) > 50]  # Skip tiny fragments
 
 
+def chunk_marker_blocks(blocks: list[dict], target_size: int = CHUNK_SIZE) -> list[str]:
+    chunks = []
+    current_chunk = []
+    current_size = 0
+    
+    for b in blocks:
+        btype = b.get("block_type", b.get("type", "unknown"))
+        text = b.get("html", b.get("text", ""))
+        
+        if btype in ("Section-header", "Title", "Heading") and current_size > target_size * 0.5:
+            chunks.append("\n\n".join(current_chunk))
+            current_chunk = []
+            current_size = 0
+            
+        current_chunk.append(text)
+        current_size += len(text)
+        
+        if current_size >= target_size and btype in ("Text", "List-item", "Paragraph"):
+            chunks.append("\n\n".join(current_chunk))
+            current_chunk = []
+            current_size = 0
+            
+    if current_chunk:
+        chunks.append("\n\n".join(current_chunk))
+        
+    return [c for c in chunks if len(c) > 50]
+
+
+
 def _repair_truncated_json(text: str) -> dict | None:
     """Attempt to repair a truncated JSON response by closing open structures.
 
@@ -488,7 +517,7 @@ def process_chapter(
         time.sleep(_active_provider.get("pause", RATE_LIMIT_PAUSE))
 
     if not all_topics_raw:
-        print(f"    ⚠️  No topics extracted from {md_file.name}")
+        print(f"    ⚠️  No topics extracted from {file_path.name}")
         return None
 
     # ── Build typed models ──
@@ -616,27 +645,37 @@ def main():
         print(f"   Run Stage 2 (Kaggle extraction) first, then place output in {extracted_dir}")
         sys.exit(1)
 
-    # Find markdown files
-    md_files = sorted(extracted_dir.rglob("*.md"))
-    if not md_files:
-        print(f"❌ No .md files in {extracted_dir}")
+    # Find JSON/markdown files
+    source_files = sorted(extracted_dir.rglob("*.json"))
+    if not source_files:
+        source_files = sorted(extracted_dir.rglob("*.md"))
+    source_files = [f for f in source_files if not f.name.startswith("_")]
+
+    if not source_files:
+        print(f"❌ No .json or .md files in {extracted_dir}")
         sys.exit(1)
 
     print(f"📚 Subject: {subject.name} ({args.subject})")
     print(f"📁 Source: {extracted_dir}")
-    print(f"📄 Found {len(md_files)} markdown files")
+    print(f"�� Found {len(source_files)} source files")
     print(f"⏱️  Rate limit pause: {prov.get('pause', RATE_LIMIT_PAUSE)}s/req\n")
 
-    # Dry-run: just list files and sizes, then exit
     if args.dry_run:
         total_chunks = 0
-        for md_file in md_files:
-            text = md_file.read_text(encoding="utf-8")
-            chunks = chunk_text(text)
+        for src_file in source_files:
+            text = src_file.read_text(encoding="utf-8")
+            if src_file.suffix == ".json":
+                try:
+                    data = json.loads(text)
+                    chunks = chunk_marker_blocks(data.get("blocks", []))
+                except Exception:
+                    chunks = []
+            else:
+                chunks = chunk_text(text)
             total_chunks += len(chunks)
-            print(f"  📄 {md_file.relative_to(extracted_dir)}: {len(text):,} chars → {len(chunks)} chunks")
-        est_time = total_chunks * prov.get("pause", RATE_LIMIT_PAUSE) + total_chunks * 5  # ~5s per API call
-        print(f"\n📊 Total: {len(md_files)} files, {total_chunks} chunks")
+            print(f"  📄 {src_file.relative_to(extracted_dir)}: {len(text):,} chars → {len(chunks)} chunks")
+        est_time = total_chunks * prov.get("pause", RATE_LIMIT_PAUSE) + total_chunks * 5
+        print(f"\n📊 Total: {len(source_files)} files, {total_chunks} chunks")
         print(f"⏱️  Estimated time: ~{est_time / 60:.0f} min (at {prov.get('pause', RATE_LIMIT_PAUSE)}s pause + ~5s/API call)")
         return
 
@@ -654,14 +693,14 @@ def main():
     for ch_id, ch_data in done_chapters.items():
         structured_chapters.append(StructuredChapter.model_validate(ch_data))
 
-    for idx, md_file in enumerate(md_files, 1):
-        ch_key = md_file.stem
+    for idx, src_file in enumerate(source_files, 1):
+        ch_key = src_file.stem
         if ch_key in done_chapters:
-            print(f"  ⏭️  [{idx}/{len(md_files)}] Skipping {md_file.name} (done)")
+            print(f"  ⏭️  [{idx}/{len(source_files)}] Skipping {src_file.name} (done)")
             continue
 
-        print(f"\n  📖 [{idx}/{len(md_files)}] Processing: {md_file.name}")
-        chapter = process_chapter(md_file, subject_cfg, args.subject, idx)
+        print(f"\n  📖 [{idx}/{len(source_files)}] Processing: {src_file.name}")
+        chapter = process_chapter(src_file, subject_cfg, args.subject, idx)
 
         if chapter:
             structured_chapters.append(chapter)
