@@ -139,9 +139,11 @@ def _download_subject(subject_id: str, dataset_id: str, resume: bool) -> bool:
                 src.replace(local_output / src.name)
 
     json_files = sorted(local_output.glob("*.json"))
-    total_kb = sum(f.stat().st_size for f in json_files) / 1024
+    image_files = sorted(f for f in local_output.glob("*") if f.suffix.lower() in (".png", ".jpg", ".jpeg"))
+    
+    total_kb = sum(f.stat().st_size for f in json_files + image_files) / 1024
 
-    print(f"\n✅ {len(json_files)} JSON file(s) saved to: {local_output}")
+    print(f"\n✅ {len(json_files)} JSON file(s) and {len(image_files)} image(s) saved to: {local_output}")
     print(f"   Total size: {total_kb:.0f} KB")
     for f in json_files:
         print(f"  📄 {f.name}")
