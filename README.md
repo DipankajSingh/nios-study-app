@@ -85,7 +85,7 @@ cp .env.example .env   # Add your API keys (GEMINI_API_KEY required for Stage 03
 | **02c Upload**   | Upload URL config to Kaggle               | `python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you>`                                |
 | **02d Extract**  | PDF → JSON on Kaggle (marker-pdf, T4 GPU) | Open `extract_pdf_kaggle.ipynb` on Kaggle — add URL dataset as input, enable GPU + Internet, run all cells |
 | **02e Download** | Pull extracted JSON from Kaggle           | `python 02_extract/download_from_kaggle.py --subject maths-12 --dataset <you>/nios-maths-12-extracted`     |
-| **03 Structure** | JSON → structured JSON (Gemini)           | `python 03_structure/structure_content.py --subject maths-12`                                              |
+| **03 Structure** | Semantically chunked JSON → structured JSON (Gemini) | `python 03_structure/structure_content.py --subject maths-12`                                              |
 | **04 Verify**    | Anti-hallucination check                  | `python 04_verify/verify_content.py --subject maths-12`                                                    |
 | **05 Solve**     | PYQ extraction + solutions (Claude)       | `python 05_solve/solve_pyqs.py --subject maths-12`                                                         |
 | **06 Seed**      | JSON → TypeScript for backend             | `python 06_seed/seed_backend.py --subject maths-12`                                                        |
