@@ -1,0 +1,10 @@
+{
+    "id": "dipankaj/nios-pdf-extraction",
+    "title": "NIOS PDF Extraction",
+    "code_file": "extract_pdf_kaggle.ipynb",
+    "language": "python",
+    "kernel_type": "notebook",
+    "is_private": false,
+    "enable_gpu": true,
+    "enable_internet": true
+}
