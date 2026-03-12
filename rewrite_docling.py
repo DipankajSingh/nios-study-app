@@ -1,0 +1,103 @@
+import json
+with open("pipeline/02_extract/extract_pdf_kaggle.ipynb", "r") as f:
+    nb = json.load(f)
+
+# Cell 1 (index 2): Install dependencies
+nb["cells"][2]["source"] = [
+    "# ── Install dependencies ──────────────────────────────────────────────────────\n",
+    "!pip install -q docling\n"
+]
+
+# Cell 3 (index 4): Extract with marker-pdf -> docling
+new_extract_source = [
+    "# ── Extract with Docling ──────────────────────────────────────────────────────\n",
+    "from docling.document_converter import DocumentConverter\n",
+    "from docling.datamodel.pipeline_options import PdfPipelineOptions\n",
+    "from docling.datamodel.base_models import InputFormat\n",
+    "import traceback\n",
+    "\n",
+    "pipeline_options = PdfPipelineOptions()\n",
+    "pipeline_options.images_scale = 1.0\n",
+    "pipeline_options.generate_page_images = False\n",
+    "pipeline_options.generate_picture_images = True\n",
+    "\n",
+    "doc_converter = DocumentConverter(\n",
+    "    allowed_formats=[InputFormat.PDF],\n",
+    "    format_options={InputFormat.PDF: pipeline_options}\n",
+    ")\n",
+    "\n",
+    "def process_pdf(pdf_path: Path, output_dir: Path):\n",
+    "    try:\n",
+    "        conv_res = doc_converter.convert(pdf_path)\n",
+    "        doc = conv_res.document\n",
+    "        \n",
+    "        # Save JSON representation\n",
+    "        json_path = output_dir / f\"{pdf_path.stem}.json\"\n",
+    "        with open(json_path, \"w\", encoding=\"utf-8\") as f:\n",
+    "            json.dump(doc.export_to_dict(), f, indent=2)\n",
+    "            \n",
+    "        # Save embedded pictures/figures\n",
+    "        image_count = 0\n",
+    "        # Docling stores extracted pictures in the document's elements\n",
+    "        for element, _ in doc.iterate_items():\n",
+    "            if hasattr(element, \"image\") and element.image is not None:\n",
+    "                image_count += 1\n",
+    "                img_filename = f\"{pdf_path.stem}_image_{image_count}.png\"\n",
+    "                element.image.save(output_dir / img_filename)\n",
+    "                # Add a ref to the JSON item so we know what file it is\n",
+    "                element.image_filename = img_filename \n",
+    "        \n",
+    "        # Re-save JSON to include the new image_filename attributes we just bound\n",
+    "        with open(json_path, \"w\", encoding=\"utf-8\") as f:\n",
+    "            json.dump(doc.export_to_dict(), f, indent=2)\n",
+    "            \n",
+    "        return True\n",
+    "    except Exception as e:\n",
+    "        print(f\"    ❌ Error: {e}\")\n",
+    "        traceback.print_exc()\n",
+    "        return False\n",
+    "\n",
+    "print(\"Starting Docling extraction...\\n\")\n",
+    "\n",
+    "for subject_id, data in subjects_to_process.items():\n",
+    "    subject_name = data['name']\n",
+    "    chapters = data['chapters']\n",
+    "    \n",
+    "    print(f\"\\n[ {subject_id} ]  {len(chapters)} chapters\\n\" + \"=\"*40)\n",
+    "    \n",
+    "    subject_out_dir = EXTRACTED_ROOT / subject_id\n",
+    "    subject_out_dir.mkdir(parents=True, exist_ok=True)\n",
+    "    \n",
+    "    success_count = 0\n",
+    "    for idx, (ch_name, pdf_path) in enumerate(chapters, 1):\n",
+    "        json_path = subject_out_dir / f\"{pdf_path.stem}.json\"\n",
+    "        if json_path.exists():\n",
+    "            print(f\"  [{idx:2d}/{len(chapters)}] ⏭️  Skipping {ch_name} (already done)\")\n",
+    "            success_count += 1\n",
+    "            continue\n",
+    "            \n",
+    "        print(f\"  [{idx:2d}/{len(chapters)}] ⚙️  Extracting {ch_name}...\")\n",
+    "        ok = process_pdf(pdf_path, subject_out_dir)\n",
+    "        if ok:\n",
+    "            print(f\"         ✅ Saved JSON + Images\")\n",
+    "            success_count += 1\n",
+    "            \n",
+    "    # Update progress record\n",
+    "    progress[\"processed_subjects\"][subject_id] = {\n",
+    "        \"status\": \"completed\" if success_count == len(chapters) else \"partial\",\n",
+    "        \"chapters_done\": success_count,\n",
+    "        \"total_chapters\": len(chapters),\n",
+    "        \"completed_at\": time.strftime(\"%Y-%m-%dT%H:%M:%SZ\", time.gmtime())\n",
+    "    }\n",
+    "    # Save checkpoint after each subject\n",
+    "    with open(PROGRESS_FILE, \"w\") as f:\n",
+    "        json.dump(progress, f, indent=2)\n",
+    "\n",
+    "print(\"\\n\\n🎉 Extraction finished.\")\n"
+]
+nb["cells"][4]["source"] = new_extract_source
+
+with open("pipeline/02_extract/extract_pdf_kaggle.ipynb", "w") as f:
+    json.dump(nb, f, indent=1)
+
+print("Kaggle notebook updated to use Docling.")
