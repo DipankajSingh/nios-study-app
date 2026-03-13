@@ -299,20 +299,50 @@ def extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data):
 def extract_images_from_document(doc, images_dir, pdf_path, schema_data):
     """
     Try alternative methods to extract images from Docling document.
-    Modern Docling may store images in different ways.
+    Use Docling's built-in image access methods.
     """
     saved_count = 0
     
-    print(f"  🔍 Trying alternative image extraction methods...")
+    print(f"  🔍 Trying Docling image access methods...")
     
     try:
-        # Method 1: Check if document has image-related attributes
-        doc_attrs = [attr for attr in dir(doc) if 'image' in attr.lower() or 'picture' in attr.lower()]
-        if doc_attrs:
-            print(f"    📋 Document image-related attributes: {doc_attrs}")
+        # Method 1: Check _list_images_on_disk if available  
+        if hasattr(doc, '_list_images_on_disk'):
+            try:
+                disk_images = doc._list_images_on_disk()
+                print(f"    📋 _list_images_on_disk returned: {len(disk_images)} items")
+                if disk_images:
+                    for idx, img_info in enumerate(disk_images):
+                        print(f"    🔍 Disk image {idx}: {type(img_info)} - {img_info}")
+            except Exception as disk_err:
+                print(f"    ❌ Error calling _list_images_on_disk: {disk_err}")
         
-        # Method 2: Try to find images in document content
-        if hasattr(doc, 'content'):
+        # Method 2: Check _with_embedded_pictures if available
+        if hasattr(doc, '_with_embedded_pictures'):
+            try:
+                embedded_result = doc._with_embedded_pictures()
+                print(f"    📋 _with_embedded_pictures available - type: {type(embedded_result)}")
+                # This might return the document with pictures accessible, try accessing pictures again
+                if hasattr(embedded_result, 'pictures'):
+                    embedded_pictures = embedded_result.pictures
+                    print(f"    📋 Embedded pictures count: {len(embedded_pictures)}")
+                    for idx, picture in enumerate(embedded_pictures):
+                        if hasattr(picture, 'pil_image') and picture.pil_image is not None:
+                            saved_count += 1
+                            img_filename = f'image_{saved_count:03d}.png'
+                            img_path = images_dir / img_filename
+                            
+                            picture.pil_image.save(img_path)
+                            relative_img_path = f'{pdf_path.stem}_images/{img_filename}'
+                            schema_data['image_paths'].append(relative_img_path)
+                            
+                            print(f"    💾 Saved from embedded: {img_filename} ({picture.pil_image.size})")
+                            
+            except Exception as embedded_err:
+                print(f"    ❌ Error calling _with_embedded_pictures: {embedded_err}")
+        
+        # Method 3: Try accessing document content/pages for images
+        if hasattr(doc, 'content') and saved_count == 0:
             content = doc.content
             print(f"    🔍 Document content type: {type(content)}")
             # Check if content has image-related methods/attributes
@@ -334,13 +364,28 @@ def extract_images_from_document(doc, images_dir, pdf_path, schema_data):
                         except Exception as save_err:
                             print(f"    ❌ Failed to save content image {idx}: {save_err}")
         
-        # Method 3: Check document raw data or other attributes
-        for attr_name in ['media', 'resources', 'attachments', 'embedded_images']:
-            if hasattr(doc, attr_name):
-                attr_val = getattr(doc, attr_name)
-                print(f"    📋 Found document.{attr_name}: {type(attr_val)}")
-                if hasattr(attr_val, '__len__') and len(attr_val) > 0:
-                    print(f"    📊 {attr_name} has {len(attr_val)} items")
+        # Method 4: Check pages for images
+        if hasattr(doc, 'pages') and saved_count == 0:
+            print(f"    🔍 Checking pages for images...")
+            pages = doc.pages
+            for page_idx, page in enumerate(pages):
+                if hasattr(page, 'images') or hasattr(page, 'pictures'):
+                    page_images = getattr(page, 'images', None) or getattr(page, 'pictures', None)
+                    if page_images:
+                        print(f"    📄 Page {page_idx} has {len(page_images)} images")
+                        for img_idx, img in enumerate(page_images):
+                            try:
+                                if hasattr(img, 'save') and hasattr(img, 'size'):
+                                    saved_count += 1
+                                    img_filename = f'image_{saved_count:03d}.png'
+                                    img_path = images_dir / img_filename
+                                    img.save(img_path)
+                                    
+                                    relative_img_path = f'{pdf_path.stem}_images/{img_filename}'
+                                    schema_data['image_paths'].append(relative_img_path)
+                                    print(f"    💾 Saved from page {page_idx}: {img_filename} ({img.size})")
+                            except Exception as page_img_err:
+                                print(f"    ❌ Error saving page {page_idx} image {img_idx}: {page_img_err}")
         
     except Exception as extract_err:
         print(f"    ❌ Alternative extraction error: {extract_err}")
@@ -405,51 +450,89 @@ def extract_single_pdf(pdf_path, output_dir, subject_id, class_level, chapter_in
         doc_attrs = [attr for attr in dir(doc) if not attr.startswith('_')][:10]  # First 10 non-private attributes
         print(f"    📋 Document attributes: {doc_attrs}")
         
-        # Method 1: Try iterating over document elements (modern Docling API)
+        # Method 1: Access document.pictures directly (the correct Docling way)
         try:
-            for element, _ in doc.iterate_items():
-                pil_image = getattr(element, 'image', None)
-                if pil_image is not None:
-                    saved_count += 1
+            doc_pictures = doc.pictures
+            print(f"  ✅ Found document.pictures with {len(doc_pictures)} pictures")
+            
+            for pic_idx, picture in enumerate(doc_pictures):
+                try:
+                    # Docling pictures should have PIL image data
+                    if hasattr(picture, 'pil_image') and picture.pil_image is not None:
+                        saved_count += 1
+                        img_filename = f'image_{saved_count:03d}.png'
+                        img_path = images_dir / img_filename
+                        
+                        picture.pil_image.save(img_path)
+                        
+                        # Track image path relative to chapters directory
+                        relative_img_path = f'{pdf_path.stem}_images/{img_filename}'
+                        schema_data['image_paths'].append(relative_img_path)
+                        
+                        print(f"    💾 Saved: {img_filename} ({picture.pil_image.size})")
                     
-                    # Save all images sequentially
-                    img_filename = f'image_{saved_count:03d}.png'
-                    img_path = images_dir / img_filename
-                    pil_image.save(img_path)
+                    # Alternative: check if picture itself is an image
+                    elif hasattr(picture, 'save') and hasattr(picture, 'size'):
+                        saved_count += 1
+                        img_filename = f'image_{saved_count:03d}.png'
+                        img_path = images_dir / img_filename
+                        
+                        picture.save(img_path)
+                        relative_img_path = f'{pdf_path.stem}_images/{img_filename}'
+                        schema_data['image_paths'].append(relative_img_path)
+                        
+                        print(f"    💾 Saved: {img_filename} ({picture.size})")
                     
-                    # Track image path relative to chapters directory
-                    relative_img_path = f'{pdf_path.stem}_images/{img_filename}'
-                    schema_data['image_paths'].append(relative_img_path)
-                    
-                    print(f"    💾 Saved: {img_filename} ({pil_image.size})")
-        
-        except AttributeError:
-            # Method 2: Fallback to pictures in the export data
-            print(f"  🔄 Fallback: Checking 'pictures' in export data...")
+                    else:
+                        # Debug what the picture object contains
+                        if pic_idx < 3:  # Debug first 3 only
+                            picture_attrs = [attr for attr in dir(picture) if not attr.startswith('_')][:5]
+                            print(f"    🔍 Picture {pic_idx} attributes: {picture_attrs}")
+                            print(f"    🔍 Picture {pic_idx} type: {type(picture)}")
+                
+                except Exception as pic_err:
+                    print(f"    ❌ Error processing document picture {pic_idx}: {pic_err}")
+            
+        except Exception as doc_pictures_err:
+            print(f"  ❌ Error accessing document.pictures: {doc_pictures_err}")
+            
+        # Method 2: Try iterating over document elements (if no images from doc.pictures)
+        if saved_count == 0:
+            try:
+                print(f"  🔄 Trying document.iterate_items()...")
+                for element, _ in doc.iterate_items():
+                    pil_image = getattr(element, 'image', None)
+                    if pil_image is not None:
+                        saved_count += 1
+                        
+                        # Save all images sequentially
+                        img_filename = f'image_{saved_count:03d}.png'
+                        img_path = images_dir / img_filename
+                        pil_image.save(img_path)
+                        
+                        # Track image path relative to chapters directory
+                        relative_img_path = f'{pdf_path.stem}_images/{img_filename}'
+                        schema_data['image_paths'].append(relative_img_path)
+                        
+                        print(f"    💾 Saved from iterate_items: {img_filename} ({pil_image.size})")
+            
+            except Exception as iterate_err:
+                print(f"  ❌ Error iterating document elements: {iterate_err}")
+                
+        # Method 3: If no images from previous methods, try Docling's built-in methods
+        if saved_count == 0:
+            print(f"  🔄 Trying Docling's built-in image methods...")
+            alternative_saved = extract_images_from_document(
+                doc, images_dir, pdf_path, schema_data
+            )
+            saved_count += alternative_saved
+
+        # Method 4: Last resort - check export data for picture references 
+        if saved_count == 0:
+            print(f"  🔄 Last resort: Checking export data...")
             pictures = docling_data.get('pictures', [])
-            saved_count = extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data)
-            
-            # Method 3: If no images found in pictures, try alternative methods
-            if saved_count == 0:
-                print(f"  🔄 No images in 'pictures', trying alternative extraction...")
-                alternative_saved = extract_images_from_document(
-                    doc, images_dir, pdf_path, schema_data
-                )
-                saved_count += alternative_saved
-            
-            # Method 4: Final fallback - scan export data for other image keys
-            if saved_count == 0:
-                print(f"  🔄 Final fallback: Scanning export data for image keys...")
-                for key, value in docling_data.items():
-                    if ('image' in key.lower() or 'picture' in key.lower() or 'media' in key.lower()) and key != 'pictures':
-                        print(f"    📋 Found export key: {key} (type: {type(value)}, length: {len(value) if hasattr(value, '__len__') else 'N/A'})")
-                        if isinstance(value, list) and len(value) > 0:
-                            fallback_saved = extract_images_from_pictures(
-                                value, images_dir, pdf_path, schema_data
-                            )
-                            saved_count += fallback_saved
-                            if fallback_saved > 0:
-                                break
+            if pictures:
+                saved_count = extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data)
                     
         print(f"  📊 Total images saved: {saved_count}")
 
