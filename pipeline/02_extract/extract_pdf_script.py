@@ -47,7 +47,15 @@ import shutil
 
 # Install required packages
 print("📦 Installing required packages...")
-subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "docling"])
+try:
+    # Try to import docling to check if already installed
+    import docling
+    print(f"✅ Docling already available: version {getattr(docling, '__version__', 'unknown')}")
+except ImportError:
+    print("📦 Installing Docling...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "docling==2.79.0"])
+    import docling
+    print(f"✅ Docling installed: version {getattr(docling, '__version__', 'unknown')}")
 
 # ── Config ── edit these if needed ───────────────────────────────────────────
 print("🔧 Loading configuration...")
@@ -194,7 +202,8 @@ def check_latex_content(docling_data):
 
 def extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data):
     """
-    Handle Docling pictures data more robustly.
+    Handle Docling 2.79.0 pictures data robustly.
+    In this version, pictures often come as dicts with 'prov' and 'data' keys.
     """
     from PIL import Image
     import base64
@@ -218,6 +227,10 @@ def extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data):
                     for key in keys[:3]:
                         val = pic_data[key]
                         print(f"      {key}: {type(val).__name__}")
+                        # For Docling 2.79.0, check nested structure
+                        if isinstance(val, dict) and key == 'data':
+                            nested_keys = list(val.keys())[:3]
+                            print(f"        data keys: {nested_keys}")
             
             if isinstance(pic_data, dict):
                 # Strategy 1: Direct PIL image in common keys
@@ -229,9 +242,42 @@ def extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data):
                             print(f"    ✅ Found PIL image in '{key}' key")
                             break
                 
-                # Strategy 2: Check for base64 encoded image data
+                # Strategy 2: Docling 2.79.0 specific - check 'data' dict
+                if pil_image is None and 'data' in pic_data:
+                    data_dict = pic_data['data']
+                    if isinstance(data_dict, dict):
+                        # Check for PIL image in data dict
+                        for nested_key in ['image', 'pil_image', 'picture', 'content']:
+                            if nested_key in data_dict:
+                                potential_img = data_dict[nested_key]
+                                if hasattr(potential_img, 'save') and hasattr(potential_img, 'size'):
+                                    pil_image = potential_img
+                                    print(f"    ✅ Found PIL image in 'data.{nested_key}' key")
+                                    break
+                        
+                        # Check for base64 or bytes in data dict
+                        if pil_image is None:
+                            for nested_key in ['bytes', 'content', 'image_data', 'raw']:
+                                if nested_key in data_dict:
+                                    raw_data = data_dict[nested_key]
+                                    if isinstance(raw_data, (str, bytes)):
+                                        try:
+                                            if isinstance(raw_data, str) and len(raw_data) > 100:
+                                                image_bytes = base64.b64decode(raw_data)
+                                            elif isinstance(raw_data, bytes):
+                                                image_bytes = raw_data
+                                            else:
+                                                continue
+                                            
+                                            pil_image = Image.open(io.BytesIO(image_bytes))
+                                            print(f"    ✅ Decoded image from 'data.{nested_key}' key")
+                                            break
+                                        except Exception:
+                                            continue
+                
+                # Strategy 3: Check for base64 encoded image data in top level
                 if pil_image is None:
-                    for key in ['data', 'content', 'bytes', 'image_data']:
+                    for key in ['content', 'bytes', 'image_data']:
                         if key in pic_data:
                             data = pic_data[key]
                             if isinstance(data, (str, bytes)):
@@ -249,7 +295,7 @@ def extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data):
                                 except Exception:
                                     continue
                 
-                # Strategy 3: Check nested structures
+                # Strategy 4: Check further nested structures
                 if pil_image is None:
                     for key, value in pic_data.items():
                         if isinstance(value, dict):
