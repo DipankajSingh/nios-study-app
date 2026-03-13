@@ -47,15 +47,7 @@ import shutil
 
 # Install required packages
 print("📦 Installing required packages...")
-try:
-    # Try to import docling to check if already installed
-    import docling
-    print(f"✅ Docling already available: version {getattr(docling, '__version__', 'unknown')}")
-except ImportError:
-    print("📦 Installing Docling...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "docling==2.79.0"])
-    import docling
-    print(f"✅ Docling installed: version {getattr(docling, '__version__', 'unknown')}")
+subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "docling"])
 
 # ── Config ── edit these if needed ───────────────────────────────────────────
 print("🔧 Loading configuration...")
@@ -202,8 +194,8 @@ def check_latex_content(docling_data):
 
 def extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data):
     """
-    Handle Docling 2.79.0 pictures data robustly.
-    In this version, pictures often come as dicts with 'prov' and 'data' keys.
+    Handle Docling pictures data more robustly.
+    Docling 2.79.0 returns document structure references, not actual images.
     """
     from PIL import Image
     import base64
@@ -212,6 +204,15 @@ def extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data):
     saved_count = 0
     
     print(f"  🔍 Found {len(pictures)} pictures in export data")
+    
+    # Check if pictures contain document structure references
+    if len(pictures) > 0 and isinstance(pictures[0], dict):
+        first_keys = list(pictures[0].keys())
+        if 'self_ref' in first_keys or 'parent' in first_keys or 'children' in first_keys:
+            print(f"    ⚠️  Pictures appear to be document structure references, not image data")
+            print(f"    📋 Structure keys: {first_keys[:3]}")
+            print(f"    💡 Modern Docling may store images differently - trying alternative methods...")
+            return saved_count  # Early return, no images here
     
     for pic_idx, pic_data in enumerate(pictures):
         try:
@@ -227,14 +228,10 @@ def extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data):
                     for key in keys[:3]:
                         val = pic_data[key]
                         print(f"      {key}: {type(val).__name__}")
-                        # For Docling 2.79.0, check nested structure
-                        if isinstance(val, dict) and key == 'data':
-                            nested_keys = list(val.keys())[:3]
-                            print(f"        data keys: {nested_keys}")
             
             if isinstance(pic_data, dict):
                 # Strategy 1: Direct PIL image in common keys
-                for key in ['pil_image', 'image', 'img', 'picture']:
+                for key in ['pil_image', 'image', 'img', 'picture', 'bitmap']:
                     if key in pic_data:
                         potential_img = pic_data[key]
                         if hasattr(potential_img, 'save') and hasattr(potential_img, 'size'):
@@ -242,49 +239,16 @@ def extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data):
                             print(f"    ✅ Found PIL image in '{key}' key")
                             break
                 
-                # Strategy 2: Docling 2.79.0 specific - check 'data' dict
-                if pil_image is None and 'data' in pic_data:
-                    data_dict = pic_data['data']
-                    if isinstance(data_dict, dict):
-                        # Check for PIL image in data dict
-                        for nested_key in ['image', 'pil_image', 'picture', 'content']:
-                            if nested_key in data_dict:
-                                potential_img = data_dict[nested_key]
-                                if hasattr(potential_img, 'save') and hasattr(potential_img, 'size'):
-                                    pil_image = potential_img
-                                    print(f"    ✅ Found PIL image in 'data.{nested_key}' key")
-                                    break
-                        
-                        # Check for base64 or bytes in data dict
-                        if pil_image is None:
-                            for nested_key in ['bytes', 'content', 'image_data', 'raw']:
-                                if nested_key in data_dict:
-                                    raw_data = data_dict[nested_key]
-                                    if isinstance(raw_data, (str, bytes)):
-                                        try:
-                                            if isinstance(raw_data, str) and len(raw_data) > 100:
-                                                image_bytes = base64.b64decode(raw_data)
-                                            elif isinstance(raw_data, bytes):
-                                                image_bytes = raw_data
-                                            else:
-                                                continue
-                                            
-                                            pil_image = Image.open(io.BytesIO(image_bytes))
-                                            print(f"    ✅ Decoded image from 'data.{nested_key}' key")
-                                            break
-                                        except Exception:
-                                            continue
-                
-                # Strategy 3: Check for base64 encoded image data in top level
+                # Strategy 2: Check for base64 encoded image data
                 if pil_image is None:
-                    for key in ['content', 'bytes', 'image_data']:
+                    for key in ['data', 'content', 'bytes', 'image_data', 'raw_data']:
                         if key in pic_data:
                             data = pic_data[key]
                             if isinstance(data, (str, bytes)):
                                 try:
                                     if isinstance(data, str) and len(data) > 100:  # Reasonable base64 length
                                         image_bytes = base64.b64decode(data)
-                                    elif isinstance(data, bytes):
+                                    elif isinstance(data, bytes) and len(data) > 100:
                                         image_bytes = data
                                     else:
                                         continue
@@ -295,11 +259,11 @@ def extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data):
                                 except Exception:
                                     continue
                 
-                # Strategy 4: Check further nested structures
+                # Strategy 3: Check nested structures
                 if pil_image is None:
                     for key, value in pic_data.items():
                         if isinstance(value, dict):
-                            for nested_key in ['image', 'pil_image', 'data']:
+                            for nested_key in ['image', 'pil_image', 'data', 'content']:
                                 if nested_key in value:
                                     nested_val = value[nested_key]
                                     if hasattr(nested_val, 'save') and hasattr(nested_val, 'size'):
@@ -328,6 +292,58 @@ def extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data):
                         
         except Exception as pic_err:
             print(f"    ❌ Error processing picture {pic_idx}: {pic_err}")
+    
+    return saved_count
+
+
+def extract_images_from_document(doc, images_dir, pdf_path, schema_data):
+    """
+    Try alternative methods to extract images from Docling document.
+    Modern Docling may store images in different ways.
+    """
+    saved_count = 0
+    
+    print(f"  🔍 Trying alternative image extraction methods...")
+    
+    try:
+        # Method 1: Check if document has image-related attributes
+        doc_attrs = [attr for attr in dir(doc) if 'image' in attr.lower() or 'picture' in attr.lower()]
+        if doc_attrs:
+            print(f"    📋 Document image-related attributes: {doc_attrs}")
+        
+        # Method 2: Try to find images in document content
+        if hasattr(doc, 'content'):
+            content = doc.content
+            print(f"    🔍 Document content type: {type(content)}")
+            # Check if content has image-related methods/attributes
+            if hasattr(content, 'images') or hasattr(content, 'pictures'):
+                images = getattr(content, 'images', None) or getattr(content, 'pictures', None)
+                if images:
+                    print(f"    ✅ Found {len(images)} images in document content")
+                    for idx, img in enumerate(images[:5]):  # Limit to first 5 for testing
+                        try:
+                            if hasattr(img, 'save') and hasattr(img, 'size'):
+                                saved_count += 1
+                                img_filename = f'image_{saved_count:03d}.png'
+                                img_path = images_dir / img_filename
+                                img.save(img_path)
+                                
+                                relative_img_path = f'{pdf_path.stem}_images/{img_filename}'
+                                schema_data['image_paths'].append(relative_img_path)
+                                print(f"    💾 Saved from content: {img_filename} ({img.size})")
+                        except Exception as save_err:
+                            print(f"    ❌ Failed to save content image {idx}: {save_err}")
+        
+        # Method 3: Check document raw data or other attributes
+        for attr_name in ['media', 'resources', 'attachments', 'embedded_images']:
+            if hasattr(doc, attr_name):
+                attr_val = getattr(doc, attr_name)
+                print(f"    📋 Found document.{attr_name}: {type(attr_val)}")
+                if hasattr(attr_val, '__len__') and len(attr_val) > 0:
+                    print(f"    📊 {attr_name} has {len(attr_val)} items")
+        
+    except Exception as extract_err:
+        print(f"    ❌ Alternative extraction error: {extract_err}")
     
     return saved_count
 
@@ -384,6 +400,11 @@ def extract_single_pdf(pdf_path, output_dir, subject_id, class_level, chapter_in
         # Extract all images without filtering
         print(f"  🔍 Scanning document for images...")
         
+        # Debug: Understanding document structure
+        print(f"    🔍 Document type: {type(doc)}")
+        doc_attrs = [attr for attr in dir(doc) if not attr.startswith('_')][:10]  # First 10 non-private attributes
+        print(f"    📋 Document attributes: {doc_attrs}")
+        
         # Method 1: Try iterating over document elements (modern Docling API)
         try:
             for element, _ in doc.iterate_items():
@@ -407,6 +428,28 @@ def extract_single_pdf(pdf_path, output_dir, subject_id, class_level, chapter_in
             print(f"  🔄 Fallback: Checking 'pictures' in export data...")
             pictures = docling_data.get('pictures', [])
             saved_count = extract_images_from_pictures(pictures, images_dir, pdf_path, schema_data)
+            
+            # Method 3: If no images found in pictures, try alternative methods
+            if saved_count == 0:
+                print(f"  🔄 No images in 'pictures', trying alternative extraction...")
+                alternative_saved = extract_images_from_document(
+                    doc, images_dir, pdf_path, schema_data
+                )
+                saved_count += alternative_saved
+            
+            # Method 4: Final fallback - scan export data for other image keys
+            if saved_count == 0:
+                print(f"  🔄 Final fallback: Scanning export data for image keys...")
+                for key, value in docling_data.items():
+                    if ('image' in key.lower() or 'picture' in key.lower() or 'media' in key.lower()) and key != 'pictures':
+                        print(f"    📋 Found export key: {key} (type: {type(value)}, length: {len(value) if hasattr(value, '__len__') else 'N/A'})")
+                        if isinstance(value, list) and len(value) > 0:
+                            fallback_saved = extract_images_from_pictures(
+                                value, images_dir, pdf_path, schema_data
+                            )
+                            saved_count += fallback_saved
+                            if fallback_saved > 0:
+                                break
                     
         print(f"  📊 Total images saved: {saved_count}")
 
