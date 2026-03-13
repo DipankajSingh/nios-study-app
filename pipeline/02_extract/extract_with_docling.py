@@ -1,3 +1,4 @@
+# %% [code]
 #!/usr/bin/env python3
 """
 NIOS Chapter Content Extractor using IBM Docling
