@@ -1,26 +1,4 @@
 #!/usr/bin/env python3
-"""
-NIOS Chapter Content Extractor using IBM Docling
-=================================================
-
-Extracts text, equations, tables, and images from NIOS chapter PDFs using IBM's Docling 
-with schema compliance and complete image capture. Designed for Kaggle environment with
-resume capability for processing large datasets.
-
-Directory Structure Expected:
-/kaggle/input/datasets/dipankaj/nios-chapter-pdfs/
-├── class10/
-│   ├── maths-10/
-│   │   ├── Chapter 01.pdf
-│   │   ├── Chapter 02.pdf
-│   │   └── ...
-│   └── science-10/
-└── class12/
-    ├── maths-12/
-    └── physics-12/
-
-Output: ExtractedSubject JSON files following pipeline schemas with linked images.
-"""
 
 import os
 import sys
@@ -50,55 +28,12 @@ def install_docling():
 install_docling()
 
 # Now import docling
-from docling.document_converter import DocumentConverter
+from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PDFPipelineOptions
-from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling_core.types.doc import PictureItem, TableItem
 
-# Import pipeline schemas
-sys.path.append('/kaggle/working')
-try:
-    from schemas import (
-        Subject, Chapter, ExtractedChapter, ExtractedSubject, 
-        ClassLevel, ContentBlockType
-    )
-except ImportError:
-    # Fallback: define minimal schemas if import fails
-    from enum import Enum
-    from pydantic import BaseModel
-    
-    class ClassLevel(str, Enum):
-        TEN = "10"
-        TWELVE = "12"
-    
-    class Subject(BaseModel):
-        id: str
-        name: str
-        class_level: ClassLevel
-        code: str = ""
-        description: str = ""
-        icon: str = "📘"
-        total_marks: int = 100
-    
-    class Chapter(BaseModel):
-        id: str
-        subject_id: str
-        title: str
-        order_index: int
-        expected_weightage: int = 0
-    
-    class ExtractedChapter(BaseModel):
-        chapter_id: str
-        chapter_title: str
-        order_index: int
-        source_pdf: str
-        markdown_text: str
-        image_paths: List[str] = []
-    
-    class ExtractedSubject(BaseModel):
-        subject: Subject
-        extracted_at: str
-        chapters: List[ExtractedChapter]
+# No schema classes needed - using raw Docling JSON output
 
 # Configure logging
 logging.basicConfig(
@@ -115,12 +50,10 @@ logger = logging.getLogger(__name__)
 class ExtractionConfig:
     """Configuration for the extraction process."""
     input_base_path: str = "/kaggle/input/datasets/dipankaj/nios-chapter-pdfs"
-    output_base_path: str = "/kaggle/working/extracted"
-    images_base_path: str = "/kaggle/working/images"
+    output_base_path: str = "/kaggle/working/extracted_chapters"
+    images_base_path: str = "/kaggle/working/chapter_images"
     resume_file: str = "/kaggle/working/extraction_progress.json"
-    batch_size: int = 1  # Process one PDF at a time for memory efficiency
     max_image_size: int = 1024 * 1024 * 5  # 5MB max per image
-    supported_image_formats: tuple = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff')
 
 class ProgressTracker:
     """Tracks extraction progress for resume capability."""
@@ -172,143 +105,393 @@ class ProgressTracker:
         self.save_progress()
 
 class ImageExtractor:
-    """Enhanced image extractor with multiple strategies for different docling versions."""
+    """Enhanced image extractor with context linking for study app usage."""
     
     def __init__(self, base_path: str, max_size: int):
         self.base_path = Path(base_path)
         self.max_size = max_size
         self.base_path.mkdir(parents=True, exist_ok=True)
         
-    def extract_images_from_document(self, doc_result, chapter_id: str) -> List[str]:
-        """Extract images from docling document with multiple strategies."""
+    def extract_images_with_context(self, doc_result, chapter_id: str) -> List[Dict]:
+        """Extract images and link them to nearest heading + text context."""
         images_dir = self.base_path / chapter_id
         images_dir.mkdir(exist_ok=True)
         
         extracted_images = []
         
         try:
-            # Strategy 1: Extract from document pictures
-            if hasattr(doc_result.document, 'pictures') and doc_result.document.pictures:
-                logger.info(f"Found {len(doc_result.document.pictures)} pictures in document")
-                extracted_images.extend(self._extract_from_pictures(
-                    doc_result.document.pictures, images_dir, chapter_id
-                ))
+            # Get document structure for context linking
+            document_elements = self._get_document_elements(doc_result)
             
-            # Strategy 2: Extract from page-level content
-            if hasattr(doc_result.document, 'pages'):
-                for page_idx, page in enumerate(doc_result.document.pages):
-                    if hasattr(page, 'images') and page.images:
-                        extracted_images.extend(self._extract_from_page_images(
-                            page.images, images_dir, chapter_id, page_idx
-                        ))
+            # Extract page images first
+            self._extract_page_images(doc_result, images_dir, chapter_id, document_elements, extracted_images)
             
-            # Strategy 3: Check for alternative image containers
-            extracted_images.extend(self._extract_alternative_formats(
-                doc_result, images_dir, chapter_id
-            ))
-            
+            # Extract pictures and tables using iterate_items
+            self._extract_document_elements(doc_result, images_dir, chapter_id, document_elements, extracted_images)
+                            
         except Exception as e:
             logger.error(f"Error extracting images for {chapter_id}: {e}")
             logger.error(traceback.format_exc())
         
-        logger.info(f"Successfully extracted {len(extracted_images)} images for {chapter_id}")
+        logger.info(f"Successfully extracted {len(extracted_images)} images with context for {chapter_id}")
         return extracted_images
     
-    def _extract_from_pictures(self, pictures: List, images_dir: Path, chapter_id: str) -> List[str]:
-        """Extract from document.pictures with multiple data format strategies."""
-        extracted = []
-        
-        for i, pic_data in enumerate(pictures):
-            try:
-                image_saved = False
-                image_path = images_dir / f"image_{i+1:03d}.png"
-                
-                # Strategy 1: Direct PIL image in top-level keys
-                for key in ['image', 'pil_image', 'picture', 'img']:
-                    if hasattr(pic_data, key):
-                        img_obj = getattr(pic_data, key)
-                        if self._save_pil_image(img_obj, image_path):
-                            extracted.append(str(image_path))
-                            image_saved = True
-                            break
-                
-                if image_saved:
-                    continue
-                
-                # Strategy 2: Check nested 'data' dictionary
-                if hasattr(pic_data, 'data') and isinstance(pic_data.data, dict):
-                    # Try PIL images in data dict
-                    for key in ['image', 'pil_image', 'picture', 'content']:
-                        if key in pic_data.data:
-                            img_obj = pic_data.data[key]
-                            if self._save_pil_image(img_obj, image_path):
-                                extracted.append(str(image_path))
-                                image_saved = True
-                                break
-                    
-                    if not image_saved:
-                        # Try base64/bytes content
-                        if self._save_base64_or_bytes(pic_data.data, image_path):
-                            extracted.append(str(image_path))
-                            image_saved = True
-                
-                # Strategy 3: Try the entire pic_data as image
-                if not image_saved:
-                    if self._save_pil_image(pic_data, image_path):
-                        extracted.append(str(image_path))
-                        image_saved = True
-                
-                if not image_saved:
-                    logger.warning(f"Could not extract image {i+1} from {chapter_id}")
-                    logger.debug(f"pic_data type: {type(pic_data)}, attributes: {dir(pic_data)}")
-                
-            except Exception as e:
-                logger.error(f"Error extracting picture {i+1} from {chapter_id}: {e}")
-        
-        return extracted
+    def _extract_page_images(self, doc_result, images_dir: Path, chapter_id: str, 
+                           document_elements: List[Dict], extracted_images: List[Dict]):
+        """Extract page images from document pages."""
+        try:
+            # Access pages dict (page_no -> Page object)
+            if hasattr(doc_result.document, 'pages'):
+                for page_no, page in doc_result.document.pages.items():
+                    if hasattr(page, 'image') and hasattr(page.image, 'pil_image'):
+                        image_path = images_dir / f"page_{page_no:03d}.png"
+                        
+                        # Save page image
+                        try:
+                            page.image.pil_image.save(image_path, 'PNG')
+                            if image_path.stat().st_size > self.max_size:
+                                logger.warning(f"Page image {image_path} exceeds max size, skipping")
+                                image_path.unlink()
+                                continue
+                                
+                            # Find context for page
+                            context = self._find_page_context(page_no, document_elements)
+                            
+                            extracted_images.append({
+                                'type': 'page_image',
+                                'path': str(image_path.relative_to(self.base_path.parent)),
+                                'filename': image_path.name,
+                                'page': page_no,
+                                'nearest_heading': context.get('heading', ''),
+                                'nearest_text': context.get('text', ''),
+                                'context_type': 'page'
+                            })
+                            
+                        except Exception as e:
+                            logger.error(f"Error saving page {page_no} image: {e}")
+                            
+        except Exception as e:
+            logger.debug(f"Error extracting page images: {e}")
     
-    def _extract_from_page_images(self, page_images: List, images_dir: Path, chapter_id: str, page_idx: int) -> List[str]:
-        """Extract images from page-level image containers."""
-        extracted = []
-        
-        for i, img_data in enumerate(page_images):
-            try:
-                image_path = images_dir / f"page_{page_idx+1}_image_{i+1:03d}.png"
-                
-                if self._save_pil_image(img_data, image_path):
-                    extracted.append(str(image_path))
-                elif hasattr(img_data, 'data') and self._save_base64_or_bytes(img_data.data, image_path):
-                    extracted.append(str(image_path))
-                else:
-                    logger.warning(f"Could not extract page image {i+1} from page {page_idx+1} of {chapter_id}")
+    def _extract_document_elements(self, doc_result, images_dir: Path, chapter_id: str,
+                                 document_elements: List[Dict], extracted_images: List[Dict]):
+        """Extract images from pictures and tables using iterate_items."""
+        try:
+            picture_counter = 0
+            table_counter = 0
+            
+            # Use iterate_items to go through document elements
+            for element, level in doc_result.document.iterate_items():
+                try:
+                    if isinstance(element, PictureItem):
+                        picture_counter += 1
+                        image_path = images_dir / f"picture_{picture_counter:03d}.png"
+                        
+                        # Get image using Docling's method
+                        try:
+                            picture_image = element.get_image(doc_result.document)
+                            picture_image.save(image_path, 'PNG')
+                            
+                            if image_path.stat().st_size > self.max_size:
+                                logger.warning(f"Picture {picture_counter} exceeds max size, skipping")
+                                image_path.unlink()
+                                continue
+                            
+                            # Find context
+                            context = self._find_element_context(element, document_elements)
+                            
+                            extracted_images.append({
+                                'type': 'picture',
+                                'path': str(image_path.relative_to(self.base_path.parent)),
+                                'filename': image_path.name,
+                                'index': picture_counter - 1,
+                                'nearest_heading': context.get('heading', ''),
+                                'nearest_text': context.get('text', ''),
+                                'context_type': 'picture'
+                            })
+                            
+                        except Exception as e:
+                            logger.debug(f"Error extracting picture {picture_counter}: {e}")
+                            
+                    elif isinstance(element, TableItem):
+                        # Extract table images too (they can have visual representations)
+                        table_counter += 1
+                        try:
+                            if hasattr(element, 'get_image'):
+                                image_path = images_dir / f"table_{table_counter:03d}.png"
+                                table_image = element.get_image(doc_result.document)
+                                table_image.save(image_path, 'PNG')
+                                
+                                if image_path.stat().st_size <= self.max_size:
+                                    context = self._find_element_context(element, document_elements)
+                                    
+                                    extracted_images.append({
+                                        'type': 'table_image',
+                                        'path': str(image_path.relative_to(self.base_path.parent)),
+                                        'filename': image_path.name,
+                                        'index': table_counter - 1,
+                                        'nearest_heading': context.get('heading', ''),
+                                        'nearest_text': context.get('text', ''),
+                                        'context_type': 'table'
+                                    })
+                                else:
+                                    image_path.unlink()
+                                    
+                        except Exception as e:
+                            logger.debug(f"Error extracting table {table_counter} image: {e}")
+                            
+                except Exception as e:
+                    logger.debug(f"Error processing document element: {e}")
                     
-            except Exception as e:
-                logger.error(f"Error extracting page image {i+1} from page {page_idx+1} of {chapter_id}: {e}")
-        
-        return extracted
+        except Exception as e:
+            logger.debug(f"Error in document elements iteration: {e}")
     
-    def _extract_alternative_formats(self, doc_result, images_dir: Path, chapter_id: str) -> List[str]:
-        """Extract from alternative image containers in the document."""
-        extracted = []
+    def _find_page_context(self, page_no: int, document_elements: List[Dict]) -> Dict:
+        """Find context for page images."""
+        context = {'heading': '', 'text': '', 'type': 'page'}
         
         try:
-            # Check for figures, diagrams, or other image containers
-            for attr_name in ['figures', 'diagrams', 'media', 'attachments']:
-                if hasattr(doc_result.document, attr_name):
-                    items = getattr(doc_result.document, attr_name)
-                    if items:
-                        for i, item in enumerate(items):
-                            try:
-                                image_path = images_dir / f"{attr_name}_{i+1:03d}.png"
-                                if self._save_pil_image(item, image_path):
-                                    extracted.append(str(image_path))
-                            except Exception as e:
-                                logger.debug(f"Could not extract {attr_name} {i+1}: {e}")
-        
+            # Simple approach: use first few text elements as context
+            if document_elements:
+                # Find first heading-like element
+                for element in document_elements[:10]:  # Check first 10 elements
+                    if 'heading' in element.get('type', '').lower():
+                        context['heading'] = element.get('text', '')[:100]
+                        break
+                
+                # Use first substantial text element 
+                for element in document_elements[:5]:
+                    text = element.get('text', '').strip()
+                    if len(text) > 20:  # Substantial text
+                        context['text'] = text[:200] + "..." if len(text) > 200 else text
+                        break
+                        
         except Exception as e:
-            logger.debug(f"Error in alternative image extraction: {e}")
+            logger.debug(f"Error finding page context: {e}")
+            
+        return context
+    
+    def _find_element_context(self, element, document_elements: List[Dict]) -> Dict:
+        """Find context for document elements (pictures/tables)."""
+        context = {'heading': '', 'text': '', 'type': 'element'}
         
-        return extracted
+        try:
+            # Try to find nearest text based on bounding box or order
+            if document_elements:
+                # Simple approach: use middle elements as representative context
+                mid_idx = len(document_elements) // 2
+                if mid_idx < len(document_elements):
+                    mid_element = document_elements[mid_idx]
+                    context['text'] = mid_element.get('text', '')[:200]
+                
+                # Find latest heading
+                for element_data in reversed(document_elements):
+                    if 'heading' in element_data.get('type', '').lower():
+                        context['heading'] = element_data.get('text', '')
+                        break
+                        
+        except Exception as e:
+            logger.debug(f"Error finding element context: {e}")
+            
+        return context
+    
+    def _serialize_item(self, item) -> Dict:
+        """Serialize Pydantic item to JSON-compatible dict."""
+        try:
+            if hasattr(item, 'model_dump'):
+                return item.model_dump()
+            elif hasattr(item, 'dict'):
+                return item.dict()
+            else:
+                # Fallback for simple objects
+                return str(item)
+        except Exception as e:
+            logger.debug(f"Error serializing item: {e}")
+            return str(item)
+    def _get_document_elements(self, doc_result) -> List[Dict]:
+        """Extract ordered document elements (headings, paragraphs) for context linking."""
+        elements = []
+        
+        try:
+            # Get text elements from document structure
+            if hasattr(doc_result.document, 'texts'):
+                for i, text_item in enumerate(doc_result.document.texts):
+                    elements.append({
+                        'index': i,
+                        'type': getattr(text_item, 'label', 'text'),
+                        'text': getattr(text_item, 'text', ''),
+                        'bbox': getattr(text_item, 'bbox', None)
+                    })
+            
+            # Fallback: Extract from markdown structure
+            if not elements:
+                try:
+                    markdown_text = doc_result.document.export_to_markdown()
+                    elements = self._parse_markdown_structure(markdown_text)
+                except Exception as e:
+                    logger.debug(f"Error getting markdown: {e}")
+                        
+        except Exception as e:
+            logger.debug(f"Error getting document elements: {e}")
+            
+        return elements
+    
+    def _parse_markdown_structure(self, markdown_text: str) -> List[Dict]:
+        """Parse markdown to extract headings and paragraphs."""
+        import re
+        elements = []
+        lines = markdown_text.split('\n')
+        
+        current_heading = ""
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Detect headings
+            heading_match = re.match(r'^(#{1,6})\s+(.+)$', line)
+            if heading_match:
+                level = len(heading_match.group(1))
+                text = heading_match.group(2)
+                current_heading = text
+                elements.append({
+                    'line': i,
+                    'type': f'heading_{level}',
+                    'text': text,
+                    'heading_context': text
+                })
+            elif line and not line.startswith('#'):
+                # Regular paragraph
+                elements.append({
+                    'line': i,
+                    'type': 'paragraph', 
+                    'text': line,
+                    'heading_context': current_heading
+                })
+                
+        return elements
+    
+    def _extract_picture_with_context(self, pic_data, images_dir: Path, chapter_id: str, 
+                                    img_index: int, document_elements: List[Dict]) -> Optional[Dict]:
+        """Extract single picture with context linking."""
+        try:
+            image_path = images_dir / f"image_{img_index+1:03d}.png"
+            
+            # Try to save the image
+            if not self._save_image_data(pic_data, image_path):
+                return None
+                
+            # Find nearest context
+            context = self._find_image_context(img_index, document_elements, 'picture')
+            
+            # Return image info with context
+            return {
+                'type': 'picture',
+                'path': str(image_path.relative_to(self.base_path.parent)),
+                'filename': image_path.name,
+                'index': img_index,
+                'nearest_heading': context.get('heading', ''),
+                'nearest_text': context.get('text', ''),
+                'context_type': context.get('type', 'unknown')
+            }
+            
+        except Exception as e:
+            logger.error(f"Error extracting picture {img_index}: {e}")
+            return None
+    
+    def _extract_page_image_with_context(self, img_data, images_dir: Path, chapter_id: str,
+                                       page_idx: int, img_index: int, document_elements: List[Dict]) -> Optional[Dict]:
+        """Extract page image with context linking.""" 
+        try:
+            image_path = images_dir / f"page_{page_idx+1}_image_{img_index+1:03d}.png"
+            
+            # Try to save the image
+            if not self._save_image_data(img_data, image_path):
+                return None
+                
+            # Find context based on page
+            context = self._find_image_context(img_index, document_elements, 'page', page_idx)
+            
+            return {
+                'type': 'page_image',
+                'path': str(image_path.relative_to(self.base_path.parent)), 
+                'filename': image_path.name,
+                'page': page_idx + 1,
+                'index': img_index,
+                'nearest_heading': context.get('heading', ''),
+                'nearest_text': context.get('text', ''),
+                'context_type': context.get('type', 'unknown')
+            }
+            
+        except Exception as e:
+            logger.error(f"Error extracting page {page_idx} image {img_index}: {e}")
+            return None
+    
+    def _find_image_context(self, img_index: int, document_elements: List[Dict], 
+                          img_type: str, page_idx: int = None) -> Dict:
+        """Find nearest heading and text block for image context."""
+        context = {'heading': '', 'text': '', 'type': 'unknown'}
+        
+        try:
+            # Filter elements by page if specified
+            if page_idx is not None:
+                page_elements = [e for e in document_elements if e.get('page') == page_idx]
+            else:
+                page_elements = document_elements
+                
+            if not page_elements:
+                return context
+            
+            # Find nearest heading (working backwards through document flow)
+            nearest_heading = ""
+            for element in reversed(page_elements):
+                if 'heading' in element.get('type', ''):
+                    nearest_heading = element.get('text', '')
+                    break
+            
+            # Find nearest text block (closest by position)
+            if page_elements:
+                # Simple approach: take middle element as nearest text
+                mid_idx = len(page_elements) // 2
+                if mid_idx < len(page_elements):
+                    nearest_element = page_elements[mid_idx]
+                    context = {
+                        'heading': nearest_heading or nearest_element.get('heading_context', ''),
+                        'text': nearest_element.get('text', '')[:200] + "..." if len(nearest_element.get('text', '')) > 200 else nearest_element.get('text', ''), 
+                        'type': nearest_element.get('type', 'paragraph')
+                    }
+                    
+        except Exception as e:
+            logger.debug(f"Error finding image context: {e}")
+            
+        return context
+    
+    def _save_image_data(self, img_obj, image_path: Path) -> bool:
+        """Save image using multiple strategies."""
+        # Strategy 1: Direct PIL image
+        if self._save_pil_image(img_obj, image_path):
+            return True
+            
+        # Strategy 2: Check nested data
+        if hasattr(img_obj, 'data'):
+            if isinstance(img_obj.data, dict):
+                for key in ['image', 'pil_image', 'picture', 'content']:
+                    if key in img_obj.data:
+                        if self._save_pil_image(img_obj.data[key], image_path):
+                            return True
+                if self._save_base64_or_bytes(img_obj.data, image_path):
+                    return True
+            else:
+                if self._save_pil_image(img_obj.data, image_path):
+                    return True
+                    
+        # Strategy 3: Direct attributes
+        for attr in ['image', 'pil_image', 'picture', 'img']:
+            if hasattr(img_obj, attr):
+                if self._save_pil_image(getattr(img_obj, attr), image_path):
+                    return True
+                    
+        return False
     
     def _save_pil_image(self, img_obj, image_path: Path) -> bool:
         """Try to save object as PIL image."""
@@ -377,7 +560,7 @@ class ImageExtractor:
         return False
 
 class NISODoclingExtractor:
-    """Main extractor class for NIOS content using Docling."""
+    """Main extractor class for NIOS content using Docling with raw JSON output."""
     
     def __init__(self, config: ExtractionConfig):
         self.config = config
@@ -391,7 +574,7 @@ class NISODoclingExtractor:
         # Configure Docling with optimal settings for NIOS PDFs
         self.converter = self._setup_docling_converter()
         
-        logger.info("📚 NIOS Docling Extractor initialized")
+        logger.info("📚 NIOS Docling Extractor initialized (Raw JSON mode)")
         logger.info(f"Input path: {config.input_base_path}")
         logger.info(f"Output path: {config.output_base_path}")
     
@@ -399,7 +582,7 @@ class NISODoclingExtractor:
         """Configure Docling converter with optimal settings for academic PDFs."""
         try:
             # Configure pipeline for comprehensive extraction
-            pdf_options = PDFPipelineOptions()
+            pdf_options = PdfPipelineOptions()
             pdf_options.images_scale = 2.0  # Higher quality image extraction
             pdf_options.generate_page_images = True
             pdf_options.generate_picture_images = True
@@ -407,7 +590,7 @@ class NISODoclingExtractor:
             # Initialize converter with optimal settings
             converter = DocumentConverter(
                 format_options={
-                    InputFormat.PDF: pdf_options,
+                    InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options),
                 }
             )
             
@@ -419,14 +602,14 @@ class NISODoclingExtractor:
             # Fallback to basic converter
             return DocumentConverter()
     
-    def discover_pdf_files(self) -> Dict[str, List[Tuple[str, Path]]]:
-        """Discover all PDF files organized by subject."""
+    def discover_pdf_files(self) -> List[Tuple[str, Path]]:
+        """Discover all PDF files with their chapter identifiers."""
         input_path = Path(self.config.input_base_path)
         
         if not input_path.exists():
             raise FileNotFoundError(f"Input directory not found: {input_path}")
         
-        subjects = {}
+        pdf_files = []
         
         # Process both class 10 and class 12
         for class_dir in ["class10", "class12"]:
@@ -441,22 +624,22 @@ class NISODoclingExtractor:
                     continue
                     
                 subject_id = subject_dir.name
-                pdf_files = []
                 
                 # Find all PDF files in subject directory
                 for pdf_file in subject_dir.glob("*.pdf"):
-                    pdf_files.append((subject_id, pdf_file))
-                
-                if pdf_files:
-                    # Sort by chapter number if possible
-                    pdf_files.sort(key=lambda x: self._extract_chapter_number(x[1].name))
-                    subjects[subject_id] = pdf_files
-                    logger.info(f"Found {len(pdf_files)} PDFs for {subject_id}")
+                    chapter_number = self._extract_chapter_number(pdf_file.name)
+                    chapter_id = f"{subject_id}-ch{chapter_number:02d}"
+                    pdf_files.append((chapter_id, pdf_file))
+                    
+                logger.info(f"Found {len(list(subject_dir.glob('*.pdf')))} PDFs for {subject_id}")
         
-        total_pdfs = sum(len(files) for files in subjects.values())
-        logger.info(f"📊 Discovered {len(subjects)} subjects with {total_pdfs} total PDFs")
+        # Sort by chapter ID for consistent processing order
+        pdf_files.sort(key=lambda x: x[0])
         
-        return subjects
+        total_pdfs = len(pdf_files)
+        logger.info(f"📊 Discovered {total_pdfs} PDF chapters total")
+        
+        return pdf_files
     
     def _extract_chapter_number(self, filename: str) -> int:
         """Extract chapter number from filename for sorting."""
@@ -464,76 +647,9 @@ class NISODoclingExtractor:
         match = re.search(r'[Cc]hapter\s*(\d+)', filename)
         return int(match.group(1)) if match else 999
     
-    def extract_subject(self, subject_id: str, pdf_files: List[Tuple[str, Path]]) -> Optional[ExtractedSubject]:
-        """Extract content from all PDFs in a subject."""
-        logger.info(f"🔄 Processing subject: {subject_id} ({len(pdf_files)} chapters)")
-        
-        # Create subject model
-        class_level = ClassLevel.TEN if "10" in subject_id else ClassLevel.TWELVE
-        subject = Subject(
-            id=subject_id,
-            name=subject_id.replace("-", " ").title(),
-            class_level=class_level
-        )
-        
-        extracted_chapters = []
-        successful_extractions = 0
-        
-        for i, (_, pdf_path) in enumerate(pdf_files):
-            try:
-                # Check if already processed
-                if self.progress.is_completed(str(pdf_path)):
-                    logger.info(f"⏭️ Skipping already processed: {pdf_path.name}")
-                    continue
-                
-                if self.progress.is_failed(str(pdf_path)):
-                    logger.info(f"⚠️ Skipping previously failed: {pdf_path.name}")
-                    continue
-                
-                logger.info(f"📄 Extracting chapter {i+1}/{len(pdf_files)}: {pdf_path.name}")
-                
-                # Extract single chapter
-                extracted_chapter = self._extract_single_chapter(
-                    pdf_path, subject_id, i + 1
-                )
-                
-                if extracted_chapter:
-                    extracted_chapters.append(extracted_chapter)
-                    self.progress.mark_completed(str(pdf_path))
-                    successful_extractions += 1
-                    logger.info(f"✅ Successfully extracted: {pdf_path.name}")
-                else:
-                    self.progress.mark_failed(str(pdf_path))
-                    logger.error(f"❌ Failed to extract: {pdf_path.name}")
-                
-                # Force garbage collection to manage memory
-                gc.collect()
-                
-            except Exception as e:
-                logger.error(f"Error processing {pdf_path}: {e}")
-                logger.error(traceback.format_exc())
-                self.progress.mark_failed(str(pdf_path))
-        
-        if not extracted_chapters:
-            logger.warning(f"No chapters successfully extracted for {subject_id}")
-            return None
-        
-        # Create extracted subject
-        extracted_subject = ExtractedSubject(
-            subject=subject,
-            extracted_at=datetime.now().isoformat(),
-            chapters=extracted_chapters
-        )
-        
-        logger.info(f"✨ Subject {subject_id} extraction complete: {successful_extractions}/{len(pdf_files)} chapters")
-        return extracted_subject
-    
-    def _extract_single_chapter(self, pdf_path: Path, subject_id: str, chapter_order: int) -> Optional[ExtractedChapter]:
-        """Extract content from a single PDF chapter."""
+    def extract_single_chapter(self, chapter_id: str, pdf_path: Path) -> Optional[Dict]:
+        """Extract content from a single PDF chapter and return raw Docling JSON."""
         try:
-            # Generate chapter ID
-            chapter_id = f"{subject_id}-ch{chapter_order:02d}"
-            
             logger.info(f"🔍 Processing PDF: {pdf_path}")
             
             # Convert PDF using Docling
@@ -542,118 +658,199 @@ class NISODoclingExtractor:
             if not doc_result or not doc_result.document:
                 logger.error(f"Docling failed to process: {pdf_path}")
                 return None
+                
+            # Convert Docling result to JSON (keep main content fields)
+            docling_json = self._docling_to_json(doc_result)
             
-            # Extract text content as markdown
-            markdown_text = doc_result.document.export_to_markdown()
-            
-            if not markdown_text.strip():
-                logger.warning(f"No text content extracted from: {pdf_path}")
-                markdown_text = f"# {pdf_path.stem}\n\n*No text content could be extracted from this PDF.*"
-            
-            # Extract images
-            image_paths = self.image_extractor.extract_images_from_document(
+            # Extract images with context
+            image_info = self.image_extractor.extract_images_with_context(
                 doc_result, chapter_id
             )
             
-            # Convert absolute paths to relative paths for portability
-            relative_image_paths = [
-                str(Path(img_path).relative_to(Path(self.config.images_base_path)))
-                for img_path in image_paths
-            ]
-            
-            # Create extracted chapter
-            extracted_chapter = ExtractedChapter(
-                chapter_id=chapter_id,
-                chapter_title=pdf_path.stem,
-                order_index=chapter_order,
-                source_pdf=str(pdf_path),
-                markdown_text=markdown_text,
-                image_paths=relative_image_paths
-            )
+            # Create enhanced JSON output
+            enhanced_json = {
+                'chapter_id': chapter_id,
+                'source_pdf': str(pdf_path),
+                'extracted_at': datetime.now().isoformat(),
+                'docling_content': docling_json,
+                'image_context': image_info,
+                'extraction_stats': {
+                    'images_extracted': len(image_info),
+                    'text_length': len(docling_json.get('content', '')),
+                    'pages': len(docling_json.get('pages', []))
+                }
+            }
             
             # Log extraction statistics
-            text_length = len(markdown_text)
-            image_count = len(relative_image_paths)
-            logger.info(f"📊 Extracted: {text_length:,} chars text, {image_count} images")
+            stats = enhanced_json['extraction_stats']
+            logger.info(f"📊 Extracted: {stats['text_length']:,} chars text, "
+                       f"{stats['images_extracted']} images, {stats['pages']} pages")
             
-            return extracted_chapter
+            return enhanced_json
             
         except Exception as e:
             logger.error(f"Error extracting chapter from {pdf_path}: {e}")
             logger.error(traceback.format_exc())
             return None
     
-    def save_extracted_subject(self, extracted_subject: ExtractedSubject) -> Path:
-        """Save extracted subject data as JSON."""
-        output_file = Path(self.config.output_base_path) / f"{extracted_subject.subject.id}.json"
+    def _docling_to_json(self, doc_result) -> Dict:
+        """Convert Docling result to JSON, keeping main content fields."""
+        try:
+            # Get the core content using Pydantic model serialization
+            json_data = {
+                'markdown_content': '',
+                'texts': [],
+                'tables': [],
+                'pictures': [],
+                'key_value_items': [],
+                'pages': {},
+                'metadata': {}
+            }
+            
+            # Export main content as markdown
+            try:
+                json_data['markdown_content'] = doc_result.document.export_to_markdown()
+            except Exception as e:
+                logger.debug(f"Error exporting markdown: {e}")
+            
+            # Export document structure using model_dump
+            try:
+                docling_dict = doc_result.document.model_dump()
+                
+                # Keep main content fields
+                for key in ['texts', 'tables', 'pictures', 'key_value_items']:
+                    if key in docling_dict:
+                        # Convert to serializable format
+                        items = docling_dict[key]
+                        if items:
+                            json_data[key] = [self._serialize_item(item) for item in items]
+                
+                # Handle pages separately (pages is a dict)
+                if 'pages' in docling_dict:
+                    json_data['pages'] = {str(k): self._serialize_item(v) for k, v in docling_dict['pages'].items()}
+                    
+            except Exception as e:
+                logger.debug(f"Error serializing document: {e}")
+            
+            # Include source metadata
+            try:
+                if hasattr(doc_result, 'input') and hasattr(doc_result.input, 'file'):
+                    json_data['metadata']['source_file'] = str(doc_result.input.file)
+            except:
+                pass
+                
+            return json_data
+            
+        except Exception as e:
+            logger.warning(f"Error converting Docling to JSON: {e}")
+            # Fallback: just get markdown content
+            try:
+                return {
+                    'markdown_content': doc_result.document.export_to_markdown(),
+                    'texts': [],
+                    'tables': [],
+                    'pictures': [],
+                    'key_value_items': [],
+                    'pages': {},
+                    'metadata': {'extraction_fallback': True}
+                }
+            except:
+                return {
+                    'error': 'Could not extract content', 
+                    'texts': [],
+                    'tables': [],
+                    'pictures': [],
+                    'key_value_items': [],
+                    'pages': {},
+                    'metadata': {}
+                }
+    
+    def save_chapter_json(self, chapter_data: Dict) -> Path:
+        """Save chapter data as JSON file."""
+        chapter_id = chapter_data.get('chapter_id', 'unknown')
+        output_file = Path(self.config.output_base_path) / f"{chapter_id}.json"
         
         try:
-            # Convert to dict and save as JSON
-            subject_data = extracted_subject.model_dump(indent=2)
-            
             with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(subject_data, f, indent=2, ensure_ascii=False)
+                json.dump(chapter_data, f, indent=2, ensure_ascii=False, default=str)
             
-            logger.info(f"💾 Saved extracted subject: {output_file}")
+            logger.info(f"💾 Saved chapter JSON: {output_file}")
             return output_file
             
         except Exception as e:
-            logger.error(f"Error saving extracted subject: {e}")
+            logger.error(f"Error saving chapter JSON: {e}")
             raise
     
     def run_extraction(self) -> Dict[str, Any]:
-        """Run the complete extraction process."""
-        logger.info("🚀 Starting NIOS content extraction with Docling")
+        """Run the complete extraction process - one JSON per chapter."""
+        logger.info("🚀 Starting NIOS content extraction with Docling (Raw JSON mode)")
         
         start_time = datetime.now()
         stats = {
             "start_time": start_time.isoformat(),
-            "subjects_processed": 0,
-            "chapters_extracted": 0,
+            "chapters_processed": 0,
             "images_extracted": 0,
-            "failed_subjects": [],
+            "failed_chapters": [],
             "output_files": []
         }
         
         try:
             # Discover all PDF files
-            subjects = self.discover_pdf_files()
+            pdf_files = self.discover_pdf_files()
             
-            if not subjects:
+            if not pdf_files:
                 logger.error("❌ No PDF files found to process")
                 return stats
             
-            # Process each subject
-            for subject_id, pdf_files in subjects.items():
+            # Process each chapter individually
+            for chapter_id, pdf_path in pdf_files:
                 try:
                     logger.info(f"\n{'='*60}")
-                    logger.info(f"📚 Processing Subject: {subject_id}")
+                    logger.info(f"📄 Processing Chapter: {chapter_id}")
+                    logger.info(f"📁 Source: {pdf_path.name}")
                     logger.info(f"{'='*60}")
                     
-                    extracted_subject = self.extract_subject(subject_id, pdf_files)
+                    # Check if already processed
+                    if self.progress.is_completed(str(pdf_path)):
+                        logger.info(f"⏭️ Skipping already processed: {chapter_id}")
+                        continue
                     
-                    if extracted_subject:
-                        # Save extracted data
-                        output_file = self.save_extracted_subject(extracted_subject)
+                    if self.progress.is_failed(str(pdf_path)):
+                        logger.info(f"⚠️ Skipping previously failed: {chapter_id}")
+                        continue
+                    
+                    # Extract chapter content
+                    chapter_data = self.extract_single_chapter(chapter_id, pdf_path)
+                    
+                    if chapter_data:
+                        # Save JSON file
+                        output_file = self.save_chapter_json(chapter_data)
                         stats["output_files"].append(str(output_file))
-                        stats["subjects_processed"] += 1
-                        stats["chapters_extracted"] += len(extracted_subject.chapters)
+                        stats["chapters_processed"] += 1
                         
                         # Count images
-                        total_images = sum(
-                            len(chapter.image_paths) 
-                            for chapter in extracted_subject.chapters
-                        )
-                        stats["images_extracted"] += total_images
+                        images_count = len(chapter_data.get('image_context', []))
+                        stats["images_extracted"] += images_count
                         
-                        logger.info(f"✅ Subject {subject_id} completed successfully")
+                        # Mark as completed
+                        self.progress.mark_completed(str(pdf_path))
+                        
+                        logger.info(f"✅ Chapter {chapter_id} completed successfully")
+                        logger.info(f"   📊 {images_count} images, JSON saved")
+                        
                     else:
-                        stats["failed_subjects"].append(subject_id)
-                        logger.error(f"❌ Subject {subject_id} failed")
+                        stats["failed_chapters"].append(chapter_id)
+                        self.progress.mark_failed(str(pdf_path))
+                        logger.error(f"❌ Chapter {chapter_id} failed")
+                    
+                    # Force garbage collection to manage memory
+                    gc.collect()
                         
                 except Exception as e:
-                    logger.error(f"Error processing subject {subject_id}: {e}")
-                    stats["failed_subjects"].append(subject_id)
+                    logger.error(f"Error processing chapter {chapter_id}: {e}")
+                    logger.error(traceback.format_exc())
+                    stats["failed_chapters"].append(chapter_id)
+                    self.progress.mark_failed(str(pdf_path))
             
             # Final statistics
             end_time = datetime.now()
@@ -669,15 +866,14 @@ class NISODoclingExtractor:
             logger.info(f"\n{'='*60}")
             logger.info("📊 EXTRACTION SUMMARY")
             logger.info(f"{'='*60}")
-            logger.info(f"✅ Subjects processed: {stats['subjects_processed']}")
-            logger.info(f"📄 Chapters extracted: {stats['chapters_extracted']}")
+            logger.info(f"✅ Chapters processed: {stats['chapters_processed']}")
             logger.info(f"🖼️ Images extracted: {stats['images_extracted']}")
-            logger.info(f"❌ Failed subjects: {len(stats['failed_subjects'])}")
+            logger.info(f"❌ Failed chapters: {len(stats['failed_chapters'])}")
             logger.info(f"⏱️ Duration: {stats['duration_formatted']}")
             logger.info(f"📁 Output files: {len(stats['output_files'])}")
             
-            if stats["failed_subjects"]:
-                logger.error(f"Failed subjects: {', '.join(stats['failed_subjects'])}")
+            if stats["failed_chapters"]:
+                logger.error(f"Failed chapters: {', '.join(stats['failed_chapters'])}")
             
             return stats
             
@@ -709,7 +905,7 @@ def main():
         
         logger.info(f"📊 Final statistics saved to: {stats_file}")
         
-        if stats["subjects_processed"] > 0:
+        if stats["chapters_processed"] > 0:
             logger.info("🎉 Extraction completed successfully!")
         else:
             logger.error("💥 No subjects were successfully processed")
