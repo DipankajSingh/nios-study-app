@@ -1,4 +1,50 @@
 #!/usr/bin/env python3
+"""
+NIOS Chapter Content Extractor using IBM Docling
+=================================================
+
+Extracts text, equations, tables, and images from NIOS chapter PDFs using IBM's Docling.
+Outputs raw Docling JSON files organized in class/subject/chapter directory structure 
+with enhanced image context linking for study app usage.
+
+Directory Structure Expected:
+/kaggle/input/datasets/dipankaj/nios-chapter-pdfs/
+├── class10/
+│   ├── maths-10/
+│   │   ├── Chapter 01.pdf
+│   │   ├── Chapter 02.pdf
+│   │   └── ...
+│   └── science-10/
+└── class12/
+    ├── maths-12/
+    └── physics-12/
+
+Output Structure:
+/kaggle/working/extracted_chapters/
+├── class10/
+│   ├── maths-10/
+│   │   ├── Chapter 01.json
+│   │   ├── Chapter 02.json
+│   │   └── ...
+│   └── science-10/
+└── class12/
+    ├── maths-12/
+    └── physics-12/
+
+Images organized similarly in:
+/kaggle/working/chapter_images/
+├── class10/
+│   ├── maths-10/
+│   │   ├── Chapter 01/
+│   │   │   ├── page_001.png
+│   │   │   ├── picture_001.png
+│   │   │   └── ...
+│   │   └── Chapter 02/
+│   └── science-10/
+└── class12/
+
+Output: Raw Docling JSON files per chapter with class/subject hierarchy and enhanced image context linking.
+"""
 
 import os
 import sys
@@ -112,10 +158,13 @@ class ImageExtractor:
         self.max_size = max_size
         self.base_path.mkdir(parents=True, exist_ok=True)
         
-    def extract_images_with_context(self, doc_result, chapter_id: str) -> List[Dict]:
+    def extract_images_with_context(self, doc_result, chapter_info: Dict[str, str]) -> List[Dict]:
         """Extract images and link them to nearest heading + text context."""
-        images_dir = self.base_path / chapter_id
-        images_dir.mkdir(exist_ok=True)
+        # Create hierarchical directory structure: class/subject/chapter
+        class_dir = self.base_path / chapter_info['class_name']
+        subject_dir = class_dir / chapter_info['subject']
+        images_dir = subject_dir / chapter_info['chapter_name']
+        images_dir.mkdir(parents=True, exist_ok=True)
         
         extracted_images = []
         
@@ -124,16 +173,16 @@ class ImageExtractor:
             document_elements = self._get_document_elements(doc_result)
             
             # Extract page images first
-            self._extract_page_images(doc_result, images_dir, chapter_id, document_elements, extracted_images)
+            self._extract_page_images(doc_result, images_dir, chapter_info['chapter_id'], document_elements, extracted_images)
             
             # Extract pictures and tables using iterate_items
-            self._extract_document_elements(doc_result, images_dir, chapter_id, document_elements, extracted_images)
+            self._extract_document_elements(doc_result, images_dir, chapter_info['chapter_id'], document_elements, extracted_images)
                             
         except Exception as e:
-            logger.error(f"Error extracting images for {chapter_id}: {e}")
+            logger.error(f"Error extracting images for {chapter_info['chapter_id']}: {e}")
             logger.error(traceback.format_exc())
         
-        logger.info(f"Successfully extracted {len(extracted_images)} images with context for {chapter_id}")
+        logger.info(f"Successfully extracted {len(extracted_images)} images with context for {chapter_info['chapter_id']}")
         return extracted_images
     
     def _extract_page_images(self, doc_result, images_dir: Path, chapter_id: str, 
@@ -602,8 +651,8 @@ class NISODoclingExtractor:
             # Fallback to basic converter
             return DocumentConverter()
     
-    def discover_pdf_files(self) -> List[Tuple[str, Path]]:
-        """Discover all PDF files with their chapter identifiers."""
+    def discover_pdf_files(self) -> List[Dict[str, str]]:
+        """Discover all PDF files with their chapter identifiers and hierarchy info."""
         input_path = Path(self.config.input_base_path)
         
         if not input_path.exists():
@@ -628,13 +677,22 @@ class NISODoclingExtractor:
                 # Find all PDF files in subject directory
                 for pdf_file in subject_dir.glob("*.pdf"):
                     chapter_number = self._extract_chapter_number(pdf_file.name)
+                    chapter_name = pdf_file.stem  # Filename without extension
                     chapter_id = f"{subject_id}-ch{chapter_number:02d}"
-                    pdf_files.append((chapter_id, pdf_file))
+                    
+                    pdf_files.append({
+                        'class_name': class_dir,
+                        'subject': subject_id, 
+                        'chapter_id': chapter_id,
+                        'chapter_name': chapter_name,
+                        'chapter_number': chapter_number,
+                        'pdf_path': pdf_file
+                    })
                     
                 logger.info(f"Found {len(list(subject_dir.glob('*.pdf')))} PDFs for {subject_id}")
         
-        # Sort by chapter ID for consistent processing order
-        pdf_files.sort(key=lambda x: x[0])
+        # Sort by class, subject, then chapter number for consistent processing order
+        pdf_files.sort(key=lambda x: (x['class_name'], x['subject'], x['chapter_number']))
         
         total_pdfs = len(pdf_files)
         logger.info(f"📊 Discovered {total_pdfs} PDF chapters total")
@@ -647,9 +705,10 @@ class NISODoclingExtractor:
         match = re.search(r'[Cc]hapter\s*(\d+)', filename)
         return int(match.group(1)) if match else 999
     
-    def extract_single_chapter(self, chapter_id: str, pdf_path: Path) -> Optional[Dict]:
+    def extract_single_chapter(self, chapter_info: Dict[str, str]) -> Optional[Dict]:
         """Extract content from a single PDF chapter and return raw Docling JSON."""
         try:
+            pdf_path = chapter_info['pdf_path']
             logger.info(f"🔍 Processing PDF: {pdf_path}")
             
             # Convert PDF using Docling
@@ -664,12 +723,16 @@ class NISODoclingExtractor:
             
             # Extract images with context
             image_info = self.image_extractor.extract_images_with_context(
-                doc_result, chapter_id
+                doc_result, chapter_info
             )
             
             # Create enhanced JSON output
             enhanced_json = {
-                'chapter_id': chapter_id,
+                'chapter_id': chapter_info['chapter_id'],
+                'class_name': chapter_info['class_name'],
+                'subject': chapter_info['subject'],
+                'chapter_name': chapter_info['chapter_name'],
+                'chapter_number': chapter_info['chapter_number'],
                 'source_pdf': str(pdf_path),
                 'extracted_at': datetime.now().isoformat(),
                 'docling_content': docling_json,
@@ -765,10 +828,15 @@ class NISODoclingExtractor:
                     'metadata': {}
                 }
     
-    def save_chapter_json(self, chapter_data: Dict) -> Path:
-        """Save chapter data as JSON file."""
-        chapter_id = chapter_data.get('chapter_id', 'unknown')
-        output_file = Path(self.config.output_base_path) / f"{chapter_id}.json"
+    def save_chapter_json(self, chapter_data: Dict, chapter_info: Dict[str, str]) -> Path:
+        """Save chapter data as JSON file in organized directory structure."""
+        # Create hierarchical directory structure: class/subject/ 
+        class_dir = Path(self.config.output_base_path) / chapter_info['class_name']
+        subject_dir = class_dir / chapter_info['subject']
+        subject_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Use chapter name for filename
+        output_file = subject_dir / f"{chapter_info['chapter_name']}.json"
         
         try:
             with open(output_file, 'w', encoding='utf-8') as f:
@@ -803,10 +871,13 @@ class NISODoclingExtractor:
                 return stats
             
             # Process each chapter individually
-            for chapter_id, pdf_path in pdf_files:
+            for chapter_info in pdf_files:
                 try:
+                    chapter_id = chapter_info['chapter_id']
+                    pdf_path = chapter_info['pdf_path']
                     logger.info(f"\n{'='*60}")
                     logger.info(f"📄 Processing Chapter: {chapter_id}")
+                    logger.info(f"📁 Class: {chapter_info['class_name']} | Subject: {chapter_info['subject']}")
                     logger.info(f"📁 Source: {pdf_path.name}")
                     logger.info(f"{'='*60}")
                     
@@ -820,11 +891,11 @@ class NISODoclingExtractor:
                         continue
                     
                     # Extract chapter content
-                    chapter_data = self.extract_single_chapter(chapter_id, pdf_path)
+                    chapter_data = self.extract_single_chapter(chapter_info)
                     
                     if chapter_data:
                         # Save JSON file
-                        output_file = self.save_chapter_json(chapter_data)
+                        output_file = self.save_chapter_json(chapter_data, chapter_info)
                         stats["output_files"].append(str(output_file))
                         stats["chapters_processed"] += 1
                         
@@ -836,7 +907,7 @@ class NISODoclingExtractor:
                         self.progress.mark_completed(str(pdf_path))
                         
                         logger.info(f"✅ Chapter {chapter_id} completed successfully")
-                        logger.info(f"   📊 {images_count} images, JSON saved")
+                        logger.info(f"   📊 {images_count} images, JSON saved to {chapter_info['class_name']}/{chapter_info['subject']}")
                         
                     else:
                         stats["failed_chapters"].append(chapter_id)
