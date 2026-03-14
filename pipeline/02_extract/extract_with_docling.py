@@ -1,4 +1,5 @@
 # %% [code]
+# %% [code]
 #!/usr/bin/env python3
 """
 NIOS Chapter Content Extractor using IBM Docling
@@ -634,7 +635,7 @@ class NISODoclingExtractor:
             # Configure pipeline for comprehensive extraction
             pdf_options = PdfPipelineOptions()
             pdf_options.images_scale = 2.0  # Higher quality image extraction
-            pdf_options.generate_page_images = True
+            pdf_options.generate_page_images = False
             pdf_options.generate_picture_images = True
             
             # Initialize converter with optimal settings
