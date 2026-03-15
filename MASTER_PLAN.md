@@ -83,24 +83,18 @@ nios-study-app/
 ├── pipeline/                   ← Content generation (Python)
 │   ├── config.py               ← Paths, API keys, subject registry
 │   ├── schemas.py              ← Pydantic models (shared data shapes)
-│   ├── requirements.txt
 │   ├── .env.example
 │   │
-│   ├── 01_scrape/              ← Scrape PDFs from NIOS → Google Drive
-│   │   ├── scrape_nios.py      ← Interactive CLI scraper
-│   │   ├── generate_subjects.py ← Regenerate subject lists
-│   │   ├── subjects_10.json
-│   │   ├── subjects_12.json
-│   │   ├── downloads_registry.json
-│   │   ├── credentials.json    ← Google OAuth (gitignored)
-│   │   └── token.json          ← Auto-generated auth token (gitignored)
+│   ├── 01_scrape/              ← Generate chapter URLs from NIOS website
+│   │   ├── generate_chapter_urls.py  ← Scrape NIOS for chapter PDF URLs
+│   │   └── chapter_urls/              ← Generated URL configs per subject
+│   │       ├── maths-12.json
+│   │       ├── physics-12.json
+│   │       └── ...
 │   │
 │   ├── 02_extract/             ← PDF → Typed JSON (Kaggle + marker-pdf)
-│   │   ├── generate_chapter_urls.py   ← Scrape NIOS for chapter PDF URLs
-│   │   ├── upload_to_kaggle.py        ← Upload URL config to Kaggle dataset
-│   │   ├── extract_pdf_kaggle.ipynb   ← Kaggle notebook: download + extract
-│   │   ├── download_from_kaggle.py    ← Pull extracted JSON from Kaggle
-│   │   └── download_from_drive.py     ← (legacy) Download Markdown from Drive
+│   │   ├── extract_pdf_kaggle.ipynb  ← 3-cell Marker extraction (self-contained)
+│   │   └── download_chapters_local.py ← Local PDF downloader
 │   │
 │   │
 │   ├── 03_structure/           ← Markdown → structured JSON (Gemini)
@@ -116,10 +110,11 @@ nios-study-app/
 │   │   └── seed_backend.py
 │   │
 │   └── output/                 ← Pipeline artifacts (gitignored)
-│       ├── extracted/
-│       ├── structured/
-│       ├── verified/
-│       └── solved/
+│       ├── nios-extracted/     ← Marker JSON output from Kaggle
+│       ├── raw-pdfs/           ← NIOS chapter PDFs from website
+│       ├── structured/         ← Gemini-structured JSON
+│       ├── verified/           ← Anti-hallucination verified JSON
+│       └── solved/             ← PYQ solutions
 │
 ├── content/                    ← Raw source material (downloaded from Drive)
 │   └── class12/
@@ -166,14 +161,14 @@ nios-study-app/
 
 The pipeline transforms raw NIOS PDFs into structured, verified study content. Each stage has its own directory, CLI entry point, and checkpoint system for resumability.
 
-| Stage            | Script                     | Input                    | Output              | Runs On             |
-| ---------------- | -------------------------- | ------------------------ | ------------------- | ------------------- |
-| **01 Scrape**    | `scrape_nios.py`           | NIOS website             | PDFs → Google Drive | Local               |
-| **02 Extract**   | `extract_pdf_kaggle.ipynb` | NIOS website (direct)    | JSON (typed blocks) | **Kaggle** (T4 GPU) |
-| **03 Structure** | `structure_content.py`     | Markdown                 | Structured JSON     | Local (Gemini)      |
-| **04 Verify**    | `verify_content.py`        | Structured JSON + source | Verified JSON       | Local               |
-| **05 Solve**     | `solve_pyqs.py`            | PYQ papers               | Solved PYQ JSON     | Local (API)         |
-| **06 Seed**      | `seed_backend.py`          | Verified JSON + PYQs     | TypeScript file     | Local               |
+| Stage            | Script                     | Input                    | Output               | Runs On             |
+| ---------------- | -------------------------- | ------------------------ | -------------------- | ------------------- |
+| **01 Scrape**    | `generate_chapter_urls.py` | NIOS website             | Chapter URL configs  | Local               |
+| **02 Extract**   | `extract_pdf_kaggle.ipynb` | NIOS PDFs (direct URLs)  | JSON (Marker output) | **Kaggle** (T4 GPU) |
+| **03 Structure** | `structure_content.py`     | Markdown                 | Structured JSON      | Local (Gemini)      |
+| **04 Verify**    | `verify_content.py`        | Structured JSON + source | Verified JSON        | Local               |
+| **05 Solve**     | `solve_pyqs.py`            | PYQ papers               | Solved PYQ JSON      | Local (API)         |
+| **06 Seed**      | `seed_backend.py`          | Verified JSON + PYQs     | TypeScript file      | Local               |
 
 ### 4.2 Data Models (schemas.py)
 

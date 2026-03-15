@@ -39,15 +39,25 @@ scripts/token.json
 scripts/__pycache__/
 scripts/venv/
 
-# Pipeline
+# Pipeline outputs (exclude intermediate processing files)
 pipeline/.env
-pipeline/output/
 pipeline/**/__pycache__/
 pipeline/credentials.json
 pipeline/token.json
 pipeline/token_readonly.json
 
+# Exclude all pipeline output directories
+pipeline/output/
+# pipeline/output/raw-pdfs/          # NIOS chapter PDFs - keep  
+
+# Intermediate pipeline stage outputs (gitignored - regenerate as needed)
+pipeline/output/structured/
+pipeline/output/verified/
+pipeline/output/solved/
+pipeline/output/02_Extract-State/
+
 # Pipeline scraper outputs (generated — do not commit)
 pipeline/01_scrape/subjects_*.json
 pipeline/01_scrape/downloads_registry.json
-pipeline/01_scrape/chapter_urls/
+# Keep chapter URLs - they're needed for Kaggle extraction
+# pipeline/01_scrape/chapter_urls/

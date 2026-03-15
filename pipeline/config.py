@@ -16,8 +16,8 @@ BACKEND_DIR = ROOT_DIR / "backend"
 # Pipeline I/O directories
 OUTPUT_DIR        = PIPELINE_DIR / "output"
 CHAPTER_URLS_DIR  = PIPELINE_DIR / "01_scrape" / "chapter_urls"  # Stage 1 output
-PDF_OUTPUT_ROOT   = OUTPUT_DIR / "pdfs"         # local chapter PDFs (Stage 2b)
-EXTRACTED_DIR     = OUTPUT_DIR / "extracted"    # marker-pdf JSONs from Kaggle
+PDF_OUTPUT_ROOT   = OUTPUT_DIR / "raw-pdfs"       # NIOS chapter PDFs from website
+EXTRACTED_DIR     = OUTPUT_DIR / "nios-extracted"  # marker-pdf JSONs from Kaggle
 STRUCTURED_DIR    = OUTPUT_DIR / "structured"   # JSON from DeepSeek
 VERIFIED_DIR      = OUTPUT_DIR / "verified"     # Verified clean JSON
 SOLVED_DIR        = OUTPUT_DIR / "solved"       # PYQs with solutions

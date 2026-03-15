@@ -24,7 +24,7 @@ This project is a NIOS-focused last‑minute study assistant. It builds PYQ-base
 - `backend/`: Cloudflare Worker exposing JSON APIs:
   - `/api/subjects`, `/api/topics/:id/details`, `/api/plan/today`, etc.
   - All content bundled as static TypeScript arrays (no database yet).
-- `content/`: Raw source material (NIOS PDFs, PYQ papers downloaded from Drive).
+- `content/`: Raw source material (NIOS PDFs downloaded directly from NIOS website, PYQ papers).
 
 ## Tech Stack (current)
 
@@ -40,9 +40,9 @@ This project is a NIOS-focused last‑minute study assistant. It builds PYQ-base
   - Gemini 2.5 Flash-Lite (free tier) for content structuring.
   - Claude (planned) for PYQ solving.
 - Infrastructure:
-  - Google Drive for raw PDF storage (Stage 01 scraper output).
   - Kaggle datasets for chapter URL configs and marker JSON output.
   - Kaggle (30h/week free T4 GPU) for PDF processing.
+  - Direct download from NIOS website (no Google Drive needed).
 
 ## Running the Web App
 
@@ -77,18 +77,14 @@ cp .env.example .env   # Add your API keys (GEMINI_API_KEY required for Stage 03
 
 ### Pipeline Stages
 
-| Stage            | What it does                              | Command                                                                                                    |
-| ---------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **01 Scrape**    | Download NIOS PDFs → Google Drive         | `cd pipeline/01_scrape && python scrape_nios.py`                                                           |
-| **02a URLs**     | Scrape chapter URLs from NIOS             | `python 02_extract/generate_chapter_urls.py --subject maths-12`                                            |
-| **02b Local PDFs (optional)** | Download chapter PDFs locally in a structured folder | `python 02_extract/download_chapters_local.py --subject maths-12 --resume`                                  |
-| **02c Upload**   | Upload URL config to Kaggle               | `python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you>`                                |
-| **02d Extract**  | PDF → JSON on Kaggle (marker-pdf, T4 GPU) | Open `extract_pdf_kaggle.ipynb` on Kaggle — add URL dataset as input, enable GPU + Internet, run all cells |
-| **02e Download** | Pull extracted JSON from Kaggle           | `python 02_extract/download_from_kaggle.py --subject maths-12 --dataset <you>/nios-maths-12-extracted`     |
-| **03 Structure** | Semantically chunked JSON → structured JSON (Gemini) | `python 03_structure/structure_content.py --subject maths-12`                                              |
-| **04 Verify**    | Anti-hallucination check                  | `python 04_verify/verify_content.py --subject maths-12`                                                    |
-| **05 Solve**     | PYQ extraction + solutions (Claude)       | `python 05_solve/solve_pyqs.py --subject maths-12`                                                         |
-| **06 Seed**      | JSON → TypeScript for backend             | `python 06_seed/seed_backend.py --subject maths-12`                                                        |
+| Stage            | What it does                                         | Command                                                                                                              |
+| ---------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **01 URLs**      | Generate chapter URLs from NIOS website              | `python 01_scrape/generate_chapter_urls.py --subject maths-12`                                                       |
+| **02 Extract**   | PDF → JSON on Kaggle (marker-pdf, T4 GPU)            | Open `extract_pdf_kaggle.ipynb` on Kaggle, add NIOS chapter dataset as input, enable GPU + Internet, run all 3 cells |
+| **03 Structure** | Semantically chunked JSON → structured JSON (Gemini) | `python 03_structure/structure_content.py --subject maths-12`                                                        |
+| **04 Verify**    | Anti-hallucination check                             | `python 04_verify/verify_content.py --subject maths-12`                                                              |
+| **05 Solve**     | PYQ extraction + solutions (Claude)                  | `python 05_solve/solve_pyqs.py --subject maths-12`                                                                   |
+| **06 Seed**      | JSON → TypeScript for backend                        | `python 06_seed/seed_backend.py --subject maths-12`                                                                  |
 
 ### Optional: Download Chapters Locally Before Kaggle
 
