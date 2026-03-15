@@ -283,7 +283,7 @@ This enables **section-aware chunking** in Stage 03 — group all blocks under a
 - Checkpointing via `RESUME = True` (skips already-downloaded PDFs and already-extracted chapters)
 - `_manifest.json` lists all extracted files with sizes
 - Fallback: `upload_to_kaggle.py --pdfs` uploads raw PDFs as a dataset if NIOS blocks Kaggle downloads
-- Legacy: `download_from_drive.py` still available if falling back to Colab+Docling (branch: `master`)
+- Legacy: Alternative extraction methods available in git history if needed
 
 #### Stage 03: Structure (`03_structure/structure_content.py`)
 
@@ -745,7 +745,7 @@ Options:
 | Decision                         | Rationale                                                                                                                               |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | **Bundled data, no DB**          | Cloudflare Workers have instant cold start — no round-trip to D1. Content is static until pipeline re-runs                              |
-| **Google Colab for extraction**  | User's machine lacks GPU for Docling. Colab provides free T4/A100 GPU                                                                   |
+| **Kaggle for extraction**       | GPU T4 acceleration for marker-pdf. Kaggle provides free T4/A100 GPU access                                                              |
 | **Gemini 2.5 Flash-Lite**        | Free tier, fastest model (2.7s/chunk), no thinking overhead, designed for high-volume at-scale usage. DeepSeek V3 available as fallback |
 | **OpenAI-compatible endpoint**   | Gemini's `/v1beta/openai` endpoint lets us use the same httpx code for any OpenAI-compatible provider                                   |
 | **Claude for PYQ solving**       | Superior at step-by-step mathematical reasoning                                                                                         |

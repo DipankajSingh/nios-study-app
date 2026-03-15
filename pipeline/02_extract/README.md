@@ -1,6 +1,6 @@
-# NIOS Chapter Content Extractor with Docling
+# NIOS Chapter Content Extractor with Marker
 
-A comprehensive Python script for extracting text, equations, tables, and images from NIOS chapter PDFs using IBM's Docling library. Designed specifically for Kaggle environment with resume capability and complete image capture.
+A comprehensive approach for extracting text, equations, tables, and images from NIOS chapter PDFs using marker-pdf on Kaggle. Designed for GPU acceleration with resume capability and hierarchical JSON output.
 
 ## 🚀 Features
 

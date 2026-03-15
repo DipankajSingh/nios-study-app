@@ -142,12 +142,12 @@ python 03_structure/structure_content.py --subject maths-12 --provider gemini-fl
 - [x] Chapter URLs scraped and saved (`chapter_urls/maths-12.json`)
 - [ ] Extract chapters via Kaggle notebook (marker-pdf JSON output)
 - [ ] Download extracted JSONs to `pipeline/output/extracted/maths-12/`
-- [x] Stage 03 code production-ready (Gemini 2.5 Flash-Lite, smart 429 handling)
+- [x] Stage 03 code production-ready (DeepSeek API, smart rate handling)
 - [ ] Stage 03 full run
 - [ ] Stages 04–06
 
-> **Branch note:** Kaggle+marker extraction is on the `kaggle-marker` branch.
-> Fallback to Colab+Docling: `git checkout master`
+> **Current approach:** Kaggle + marker-pdf extraction for GPU acceleration.
+> Alternative methods available in git history if needed.
 
 ## Running the App
 
