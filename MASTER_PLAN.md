@@ -745,7 +745,7 @@ Options:
 | Decision                         | Rationale                                                                                                                               |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | **Bundled data, no DB**          | Cloudflare Workers have instant cold start — no round-trip to D1. Content is static until pipeline re-runs                              |
-| **Kaggle for extraction**       | GPU T4 acceleration for marker-pdf. Kaggle provides free T4/A100 GPU access                                                              |
+| **Kaggle for extraction**        | GPU T4 acceleration for marker-pdf. Kaggle provides free T4/A100 GPU access                                                             |
 | **Gemini 2.5 Flash-Lite**        | Free tier, fastest model (2.7s/chunk), no thinking overhead, designed for high-volume at-scale usage. DeepSeek V3 available as fallback |
 | **OpenAI-compatible endpoint**   | Gemini's `/v1beta/openai` endpoint lets us use the same httpx code for any OpenAI-compatible provider                                   |
 | **Claude for PYQ solving**       | Superior at step-by-step mathematical reasoning                                                                                         |

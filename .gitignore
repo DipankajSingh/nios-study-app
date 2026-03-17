@@ -61,3 +61,15 @@ pipeline/01_scrape/subjects_*.json
 pipeline/01_scrape/downloads_registry.json
 # Keep chapter URLs - they're needed for Kaggle extraction
 # pipeline/01_scrape/chapter_urls/
+
+
+# Pipeline test stage outputs (generated — do not commit)
+pipeline/stage-03-test/fastdup_workdir/
+pipeline/stage-03-test/cluster_review_manifest.json
+pipeline/stage-03-test/image_inventory.json
+pipeline/stage-03-test/manual_review.html
+pipeline/stage-03-test/master_image_pool/
+pipeline/stage-03-test/json/
+
+# ignore the python virtual environment if created
+miniconda.sh
