@@ -1,4 +1,4 @@
-# NIOS Study App — Master Plan
+# NCERT Study App — Master Plan
 
 > **Single source of truth** for architecture decisions, project structure, content pipeline, backend API, and development workflow.
 
@@ -21,7 +21,7 @@
 
 ## 1. Project Vision
 
-Build a **mobile-first study companion** for NIOS (National Institute of Open Schooling) students targeting Class 10 and Class 12 exams. The app generates **personalized daily study plans** from AI-structured content derived directly from official NIOS textbook PDFs and historical PYQ (Previous Year Question) papers.
+Build a **mobile-first study companion** for NCERT/CBSE students targeting Class 10 and Class 12 exams. The app generates **personalized daily study plans** from AI-structured content derived directly from official NIOS textbook PDFs and historical PYQ (Previous Year Question) papers.
 
 ### Core Principles
 
@@ -41,15 +41,9 @@ Build a **mobile-first study companion** for NIOS (National Institute of Open Sc
 ┌─────────────────────────────────────────────────────────────┐
 │                    CONTENT PIPELINE (Python)                 │
 │                                                             │
-│  01_scrape → 02_extract → 03_structure → 04_verify          │
-│      ↓           ↓            ↓              ↓              │
-│  NIOS PDFs     JSON        Structured      Verified          │
-│  → Drive   (Kaggle+marker) JSON (Gemini)   JSON             │
-│                                              ↓              │
-│                              05_solve → 06_seed             │
-│                              PYQ sols   TypeScript          │
-│                              (Claude)     ↓                 │
-│                                    backend/src/data/        │
+│       HuggingFace Dataset → 01_build_ncert → TypeScript      │
+│                                    ↓                        │
+│                             backend/src/data/               │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -83,38 +77,9 @@ nios-study-app/
 ├── pipeline/                   ← Content generation (Python)
 │   ├── config.py               ← Paths, API keys, subject registry
 │   ├── schemas.py              ← Pydantic models (shared data shapes)
-│   ├── .env.example
-│   │
-│   ├── 01_scrape/              ← Generate chapter URLs from NIOS website
-│   │   ├── generate_chapter_urls.py  ← Scrape NIOS for chapter PDF URLs
-│   │   └── chapter_urls/              ← Generated URL configs per subject
-│   │       ├── maths-12.json
-│   │       ├── physics-12.json
-│   │       └── ...
-│   │
-│   ├── 02_extract/             ← PDF → Typed JSON (Kaggle + marker-pdf)
-│   │   ├── extract_pdf_kaggle.ipynb  ← 3-cell Marker extraction (self-contained)
-│   │   └── download_chapters_local.py ← Local PDF downloader
-│   │
-│   │
-│   ├── 03_structure/           ← Markdown → structured JSON (Gemini)
-│   │   └── structure_content.py
-│   │
-│   ├── 04_verify/              ← Anti-hallucination verification
-│   │   └── verify_content.py
-│   │
-│   ├── 05_solve/               ← PYQ extraction + solving (Claude)
-│   │   └── solve_pyqs.py
-│   │
-│   ├── 06_seed/                ← JSON → TypeScript for backend
-│   │   └── seed_backend.py
-│   │
+│   ├── 01_build_ncert/         ← Maps HuggingFace NCERT JSON to TS
+│   │   └── build.py
 │   └── output/                 ← Pipeline artifacts (gitignored)
-│       ├── nios-extracted/     ← Marker JSON output from Kaggle
-│       ├── raw-pdfs/           ← NIOS chapter PDFs from website
-│       ├── structured/         ← Gemini-structured JSON
-│       ├── verified/           ← Anti-hallucination verified JSON
-│       └── solved/             ← PYQ solutions
 │
 ├── content/                    ← Raw source material (downloaded from Drive)
 │   └── class12/
@@ -158,313 +123,16 @@ nios-study-app/
 ## 4. Content Generation Pipeline
 
 ### 4.1 Pipeline Overview
-
-The pipeline transforms raw NIOS PDFs into structured, verified study content. Each stage has its own directory, CLI entry point, and checkpoint system for resumability.
-
-| Stage            | Script                     | Input                    | Output               | Runs On             |
-| ---------------- | -------------------------- | ------------------------ | -------------------- | ------------------- |
-| **01 Scrape**    | `generate_chapter_urls.py` | NIOS website             | Chapter URL configs  | Local               |
-| **02 Extract**   | `extract_pdf_kaggle.ipynb` | NIOS PDFs (direct URLs)  | JSON (Marker output) | **Kaggle** (T4 GPU) |
-| **03 Structure** | `structure_content.py`     | Markdown                 | Structured JSON      | Local (Gemini)      |
-| **04 Verify**    | `verify_content.py`        | Structured JSON + source | Verified JSON        | Local               |
-| **05 Solve**     | `solve_pyqs.py`            | PYQ papers               | Solved PYQ JSON      | Local (API)         |
-| **06 Seed**      | `seed_backend.py`          | Verified JSON + PYQs     | TypeScript file      | Local               |
-
-### 4.2 Data Models (schemas.py)
-
-All pipeline stages share Pydantic models defined in `pipeline/schemas.py`. This is the **single source of truth** for data shapes.
-
-**Core models:**
-
-```python
-class Subject:       id, name, classLevel, description, icon
-class Chapter:       id, subjectId, title, orderIndex
-class Topic:         id, chapterId, title, orderIndex, highYieldScore, estMinutes
-class TopicContent:  id, topicId, lang, summaryBullets, whyImportant, commonMistakes
-class ContentBlock:  # Internal — carries exact_source_quote for verification
-class PYQ:           id, subjectId, topicId, year, session, questionText, marks, difficulty, frequencyScore, questionType
-class PYQExplanation: id, pyqId, lang, steps, hints, answer
-```
-
-**Verification model:**
-
-```python
-class ContentBlock(BaseModel):
-    content: str
-    exact_source_quote: str    # Must match source text
-    is_verified: bool = False  # Set by verify stage
-```
-
-### 4.3 Stage Details
-
-#### Stage 01: Scrape (`01_scrape/scrape_nios.py`)
-
-Interactive CLI that scrapes NIOS chapter PDFs and uploads them directly to Google Drive.
-
-```bash
-cd pipeline/01_scrape
-python scrape_nios.py
-```
-
-**How it works:**
-
-1. **Select class** — prompts for Class 10 or Class 12
-2. **Load subjects** — reads `subjects_10.json` or `subjects_12.json` (pre-scraped subject lists with NIOS page URLs)
-3. **Select stream** — groups subjects into streams: Science, Commerce, Humanities, Languages, Vocational & Others
-4. **Select subjects** — pick individual subjects or all in a stream
-5. **Authenticate Google Drive** — uses OAuth via `credentials.json` → generates `token.json`
-6. **Scrape each subject page** — for each selected subject:
-   - Fetches the NIOS subject page (e.g. `nios.ac.in/.../Mathematics-(311).aspx`)
-   - Finds all `.pdf` links on the page
-   - Filters via `is_english_chapter()` — rejects Hindi-medium, TMAs, syllabi, lab manuals, full-book downloads, learner guides, etc.
-   - Extracts chapter numbers from link text/URL (e.g. "Lesson 1", "L-2", "3 - Sets") → renames to `Chapter N.pdf`
-7. **Upload to Drive** — creates folder structure: `NIOS Backup / Class 12 / Science / Mathematics (311) / Chapter N.pdf`
-8. **Registry tracking** — `downloads_registry.json` tracks SUCCESS/ERROR per file, skips already-uploaded files on re-run
-9. **Batch processing** — processes subjects in batches of 3, prompts before each batch
-
-**Key filtering rules** (`is_english_chapter()`):
-
-- Rejects non-English medium paths (`/hindi/`, `_hin/`, etc.)
-- Rejects non-chapter material (TMA, assignment, syllabus, sample paper, practical, lab manual, FAQ, etc.)
-- Rejects learner guides (`LG-1`, `LG-2`)
-- Rejects full-book downloads (`book-1.pdf`, `book1.pdf`)
-- Rejects Devanagari text for non-language subjects
-
-**To regenerate subject lists:**
-
-```bash
-cd pipeline/01_scrape
-python generate_subjects.py
-```
-
-This scrapes the NIOS course listing pages and writes `subjects_10.json` / `subjects_12.json`.
-
-**After scraping:** Download the PDFs from Google Drive to `content/class12/<subject>/pdfs/` for local pipeline processing (stages 02+).
-
-**Required files in `pipeline/01_scrape/`:**
-
-- `credentials.json` — Google OAuth client credentials
-- `token.json` — auto-generated after first auth
-- `subjects_12.json` / `subjects_10.json` — subject URLs
-- `downloads_registry.json` — upload tracking (reset when clearing Drive)
-
-#### Stage 02: Extract (Kaggle notebook + marker-pdf)
-
-Downloads chapter PDFs directly from NIOS and converts them to **typed JSON blocks** using **marker-pdf** on a Kaggle T4 GPU. No Google Drive or local PDF storage needed.
-
-**Workflow:**
-
-```bash
-# Step 1 — scrape chapter URLs from NIOS (local, ~30s)
-cd pipeline
-python 02_extract/generate_chapter_urls.py --subject maths-12
-# → writes pipeline/02_extract/chapter_urls/maths-12.json
-
-# Step 2 — upload the tiny URL config to Kaggle (5 KB)
-python 02_extract/upload_to_kaggle.py --subject maths-12 --username <you>
-# → creates Kaggle dataset: <you>/nios-maths-12-urls
-
-# Step 3 — run extract_pdf_kaggle.ipynb on Kaggle
-# Add nios-maths-12-urls as input dataset, enable GPU + Internet, run all cells
-# PDFs downloaded directly from NIOS inside Kaggle; marker-pdf extracts JSON
-
-# Step 4 — download the extracted JSON locally
-python 02_extract/download_from_kaggle.py --subject maths-12 \
-  --dataset <you>/nios-maths-12-extracted
-# → saves Chapter N.json to pipeline/output/extracted/maths-12/
-```
-
-**marker JSON block types:** `Section-header`, `Text`, `Equation`, `Table`, `Figure`, `List-item`
-
-This enables **section-aware chunking** in Stage 03 — group all blocks under a `Section-header` together rather than arbitrary character-count splits that can cut mid-equation.
-
-**Key features:**
-
-- Checkpointing via `RESUME = True` (skips already-downloaded PDFs and already-extracted chapters)
-- `_manifest.json` lists all extracted files with sizes
-- Fallback: `upload_to_kaggle.py --pdfs` uploads raw PDFs as a dataset if NIOS blocks Kaggle downloads
-- Legacy: Alternative extraction methods available in git history if needed
-
-#### Stage 03: Structure (`03_structure/structure_content.py`)
-
-Sends extracted markdown to **Gemini 2.5 Flash-Lite** (default) via the OpenAI-compatible endpoint to produce structured JSON matching the `schemas.py` models.
-
-```bash
-cd pipeline
-python 03_structure/structure_content.py --subject maths-12
-python 03_structure/structure_content.py --subject maths-12 --provider gemini-flash  # thinking model
-python 03_structure/structure_content.py --subject maths-12 --dry-run   # preview chunks
-python 03_structure/structure_content.py --subject maths-12 --resume    # continue from checkpoint
-python 03_structure/structure_content.py --subject maths-12 --limit 5   # test first 5 chunks
-```
-
-> **Note:** Cannot use `python -m 03_structure.structure_content` because directory names starting with digits are not valid Python module names. Use the direct path instead.
-
-**Supported providers:**
-
-| Provider           | Model                   | Speed     | Token Efficiency            | Free Tier RPM |
-| ------------------ | ----------------------- | --------- | --------------------------- | ------------- |
-| `gemini` (default) | `gemini-2.5-flash-lite` | ~3s/chunk | Best (no thinking overhead) | 20 RPM        |
-| `gemini-flash`     | `gemini-2.5-flash`      | ~7s/chunk | 2x more tokens (thinking)   | 10 RPM        |
-| `deepseek`         | `deepseek-chat` (V3)    | ~5s/chunk | Good                        | Generous      |
-
-**Key features:**
-
-- Text chunking with paragraph-aware overlap (~3000 char chunks)
-- Smart 429 handling: parses actual `retry_in` time from Gemini error body
-- Character-by-character JSON backslash sanitizer (fixes LaTeX `\left`, `\{`, `\text` in JSON strings)
-- Truncated JSON repair for `finish_reason=length` responses
-- Per-chapter checkpointing with `--resume` support
-- `--limit N` flag for safe testing without burning quota
-- Empty content guard for thinking models
-- Can process from extracted markdown or raw JSON files
-- System prompt enforces: meaningful topic names (not "Part 1"), goal_tier assignment, mandatory `exact_source_quote`, conciseness rules
-
-**LLM prompt rules:**
-
-- Each topic must have a descriptive name (e.g., "Quadratic Formula Derivation", not "Part 3")
-- `goal_tier` assigned: CORE (basic definitions, high-frequency exam topics), STANDARD (application problems), ADVANCED (complex, rarely asked)
-- `est_minutes` assigned based on content complexity (5-30 range)
-- Every content block must carry `exact_source_quote` from the source text
-- Conciseness enforced: 2-4 summary bullets, 1-2 sentence `why_important`, 2-4 content blocks per topic
-
-**Rate limiting strategy:**
-
-- Default 6s pause between requests (conservative for 20 RPM free tier)
-- On 429: parse "Please retry in Xs" from Gemini response body, wait that + 5s buffer
-- Fallback: progressive backoff at 30s × attempt number
-- Up to 8 retries before skipping a chunk
-
-**Output:** `pipeline/output/structured/<subject>.json` — a `StructuredSubject` containing all chapters, topics, and content blocks
-
-#### Stage 04: Verify (`04_verify/verify_content.py`)
-
-Anti-hallucination gate — checks every `exact_source_quote` against the source material.
-
-```bash
-cd pipeline
-python -m 04_verify.verify_content --subject maths-12
-```
-
-**Three verification strategies:**
-
-1. **Exact normalized match** — whitespace/case-normalized string comparison
-2. **Sliding window overlap** — ≥85% token overlap in sliding windows
-3. **Keyword density** — domain-specific keyword extraction and matching
-
-**Outputs:**
-
-- `VerifiedSubject` JSON with `is_verified` flags set
-- `VerificationStats` with pass/fail counts and percentage
-
-#### Stage 05: Solve PYQs (`05_solve/solve_pyqs.py`)
-
-Extracts questions from PYQ papers and generates step-by-step solutions using **Claude 3.7 Sonnet**.
-
-```bash
-cd pipeline
-python -m 05_solve.solve_pyqs --subject maths-12
-```
-
-**Two-step process:**
-
-1. **Extract** — parse PYQ paper into individual questions with metadata (year, session, marks, type)
-2. **Solve** — send each question to Claude for step-by-step explanation, hints, and model answer
-
-**Key features:**
-
-- Supports `.txt`, `.json`, `.pdf` input formats
-- Per-question checkpointing
-- `topic_id` left empty — mapped in post-processing by matching question text to topics
-
-#### Stage 06: Seed Backend (`06_seed/seed_backend.py`)
-
-Converts verified content + solved PYQs into TypeScript arrays for the backend worker.
-
-```bash
-cd pipeline
-python -m 06_seed.seed_backend --subject maths-12
-```
-
-**Outputs:**
-
-- `backend/src/data/generated.ts` — TypeScript with all data arrays
-- `pipeline/output/seed_reference.json` — JSON copy for debugging
-
-### 4.4 Configuration (`config.py`)
-
-Central configuration file:
-
-```python
-# Paths
-ROOT_DIR = Path(__file__).resolve().parent.parent   # nios-study-app/
-PIPELINE_DIR = ROOT_DIR / "pipeline"
-OUTPUT_DIR = PIPELINE_DIR / "output"
-CONTENT_DIR = ROOT_DIR / "content"
-BACKEND_DIR = ROOT_DIR / "backend"
-
-# API keys loaded from pipeline/.env
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-CLAUDE_API_KEY   = os.getenv("CLAUDE_API_KEY")
-GROQ_API_KEY     = os.getenv("GROQ_API_KEY")
-GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY")
-
-# Gemini via OpenAI-compatible endpoint
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
-GEMINI_MODEL    = "gemini-2.5-flash-lite"   # Stable, free tier, no thinking overhead
-
-# Subject registry
-SUBJECTS = {
-    "maths-12": {
-        "name": "Mathematics",
-        "class_level": "12",
-        "code": "311",
-        "icon": "📐",
-        "pdf_dir": CONTENT_DIR / "class12" / "maths-12" / "pdfs",
-        "pyq_dir": CONTENT_DIR / "class12" / "maths-12" / "pyqs_raw",
-    }
-}
-```
-
-### 4.5 Running the Full Pipeline
-
-```bash
-# 1. Setup
-cd pipeline
-cp .env.example .env  # Add API keys
-pip install -r requirements.txt
-
-# 2. Scrape PDFs to Google Drive
-cd 01_scrape && python scrape_nios.py   # Interactive: pick class → stream → subjects
-cd ..
-
-# 3. Download PDFs from Drive to content/class12/<subject>/pdfs/
-
-# 4. Extract on Colab (copy extract_pdf.py cells to notebook)
-#    Download results to pipeline/output/extracted/maths-12/
-
-# 5. Download extracted markdown from Drive
-python download_from_drive.py
-
-# 6. Structure content (uses Gemini free tier)
-python 03_structure/structure_content.py --subject maths-12
-# For testing: python 03_structure/structure_content.py --subject maths-12 --limit 5
-# To resume:  python 03_structure/structure_content.py --subject maths-12 --resume
-
-# 7. Verify (anti-hallucination)
-python 04_verify/verify_content.py --subject maths-12
-
-# 8. Solve PYQs
-python 05_solve/solve_pyqs.py --subject maths-12
-
-# 9. Seed backend
-python 06_seed/seed_backend.py --subject maths-12
-
-# 10. Deploy
-cd ../backend && npx wrangler deploy
-```
-
----
+The pipeline transforms raw HuggingFace NCERT datasets into structured study content. It is a single deterministic script that maps existing JSON properties (like `Explanation`, `Question`, `Answer`) directly to our TypeScript models.
+
+| Stage | Script | Input | Output | Runs On |
+| --- | --- | --- | --- | --- |
+| **01 Build NCERT** | `build.py` | HuggingFace JSON | `generated.ts` | Local |
+
+### 4.2 Data Models (`schemas.py`)
+All pipelines share Pydantic models defined in `schemas.py`. This is the single source of truth for data shapes.
+* `Subject`, `Chapter`, `Topic`, `TopicContent`
+* `PYQ`, `PYQExplanation`
 
 ## 5. Backend API Design
 
