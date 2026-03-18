@@ -6,7 +6,7 @@ INVENTORY_FILE = "./image_inventory.json"
 REVIEW_MANIFEST_FILE = "./cluster_review_manifest.json"
 MASTER_IMAGE_DIR = "./master_image_pool"
 # The base URL where these images will eventually live
-CLOUDFLARE_BASE_URL = "https://your-app.cloudflare.com/"
+CLOUDFLARE_BASE_URL = "https://test-app.cloudflare.com/"
 
 def run_stage3_purge():
     if not os.path.exists(INVENTORY_FILE) or not os.path.exists(REVIEW_MANIFEST_FILE):

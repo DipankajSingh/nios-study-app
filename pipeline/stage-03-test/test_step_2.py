@@ -25,7 +25,7 @@ def run_clustering_and_gallery():
     
     print("Running perceptual analysis with strict threshold...")
     # CRITICAL: threshold=0.95 prevents false positives
-    fd.run(overwrite=True, threshold=0.90)
+    fd.run(overwrite=True, threshold=0.75)
     
     print("Extracting cluster data...")
     try:
