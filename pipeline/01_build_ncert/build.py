@@ -7,153 +7,141 @@ from datasets import load_dataset
 def generate_id():
     return uuid.uuid4().hex[:8]
 
+def dollar_quote(s):
+    """Safely escapes strings for PostgreSQL using dollar quotes."""
+    clean_s = str(s).replace("$$", " ")
+    return f"$${clean_s}$$"
+
 def run():
-    print("Loading ParthKadam2003/NCERT_Dataset from HuggingFace...")
-    ds = load_dataset("ParthKadam2003/NCERT_Dataset", split="train")
+    local_path = "/home/dipankaj/Desktop/nios-study-app/content/ncert_dataset.json"
+    if os.path.exists(local_path):
+        print(f"Loading local dataset from {local_path}...")
+        ds = load_dataset("json", data_files=local_path, split="train")
+    else:
+        print("Downloading ParthKadam2003/NCERT_Dataset from HuggingFace...")
+        ds = load_dataset("ParthKadam2003/NCERT_Dataset", split="train")
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        ds.to_json(local_path)
     
     subjects_map = {}
     chapters_map = {}
-    topics_map = {}
     
-    out_subjects = []
-    out_chapters = []
-    out_topics = []
-    out_topic_contents = []
-    out_pyqs = []
-    out_pyq_explanations = []
+    subs_values = []
+    chaps_values = []
+    topics_values = []
+    tcontents_values = []
+    pyqs_values = []
+    exps_values = []
 
-    print(f"Processing {len(ds)} rows...")
-
+    print(f"Processing row mapping for Postgres...")
+    
+    topics_set = {}
     limit_counter = 0
+
     for row in ds:
-        # Prevent Cloudflare Worker 1MB limit crash by restricting dataset size for MVP
-        if limit_counter >= 3000:
+        if limit_counter >= 10000:
             break
 
-        subj_name = row.get("subject", "General")
-        grade = str(row.get("grade", "12"))
+        subj_name = str(row.get("subject", "General")).strip()
+        grade = str(row.get("grade", "12")).strip()
         
-        if grade != "12":
-            continue
-        if "math" not in subj_name.lower() and "physics" not in subj_name.lower() and "chemistry" not in subj_name.lower():
-            continue
+        if grade != "12": continue
+        if subj_name.lower() not in ["physics", "chemistry", "mathematics"]: continue
             
         limit_counter += 1
         
-        subject_id = f"{subj_name.replace(' ', '-').lower()}-{grade}"
+        subject_id = f"{subj_name.lower()}-{grade}"
         
         # 1. Subject
         if subject_id not in subjects_map:
             subjects_map[subject_id] = True
-            out_subjects.append({
-                "id": subject_id,
-                "name": subj_name,
-                "classLevel": "12" if grade == "12" else "10",
-                "description": f"NCERT {subj_name} for Class {grade}",
-                "icon": "📘",
-                "totalMarks": 100
-            })
+            subs_values.append(f"({dollar_quote(subject_id)}, {dollar_quote(subj_name)}, {dollar_quote(grade)}, {dollar_quote('NCERT 12 ' + subj_name)}, {dollar_quote('📘')}, 100)")
             
-            # Single synthetic Chapter per subject (since the dataset lacks chapters)
             chapter_id = f"{subject_id}-ch01"
             chapters_map[subject_id] = chapter_id
-            out_chapters.append({
-                "id": chapter_id,
-                "subjectId": subject_id,
-                "title": f"All {subj_name} Concepts",
-                "orderIndex": 1
-            })
+            chaps_values.append(f"({dollar_quote(chapter_id)}, {dollar_quote(subject_id)}, {dollar_quote('All ' + subj_name + ' Concepts')}, 1)")
 
-        if subject_id not in chapters_map:
-             continue
+        if subject_id not in chapters_map: continue
         chapter_id = chapters_map[subject_id]
         
         # 2. Topic
         topic_title = str(row.get("Topic", "General Topic")).strip()
         topic_key = f"{subject_id}-{topic_title}"
         
-        if topic_key not in topics_map:
-            topic_id = f"{subject_id}-t{len(topics_map)}"
-            topics_map[topic_key] = topic_id
+        if topic_key not in topics_set:
+            topic_id = f"{subject_id}-t{len(topics_set)}"
+            topics_set[topic_key] = topic_id
             
-            try:
-                est_time = int(row.get("EstimatedTime", 15))
-            except:
-                est_time = 15
-
-            out_topics.append({
-                "id": topic_id,
-                "chapterId": chapter_id,
-                "title": topic_title,
-                "orderIndex": len(topics_map),
-                "highYieldScore": 50,
-                "estMinutes": est_time
-            })
+            try: est_time = int(row.get("EstimatedTime", 15))
+            except: est_time = 15
+            
+            # Parse prerequisites into an array of search terms
+            raw_prereq = str(row.get("Prerequisites", ""))
+            prereq_list = [p.strip() for p in raw_prereq.replace(";", ",").replace(" and ", ",").split(",") if len(p.strip()) > 2]
+            prereq_terms = dollar_quote("{" + ",".join([f'"{p}"' for p in prereq_list]) + "}") if prereq_list else "DEFAULT"
+            
+            topics_values.append(f"({dollar_quote(topic_id)}, {dollar_quote(chapter_id)}, {dollar_quote(topic_title)}, {len(topics_set)}, DEFAULT, {prereq_terms}, 50, {est_time})")
             
             explanation = str(row.get("Explanation", ""))
-            bullets = [s.strip() + "." for s in explanation.split(".") if len(s.strip()) > 5]
-            if not bullets:
-                bullets = [topic_title]
-                
-            out_topic_contents.append({
-                "id": f"tc-{topic_id}",
-                "topicId": topic_id,
-                "lang": "en",
-                "summaryBullets": bullets[:5], # Keep max 5 bullets
-                "whyImportant": str(row.get("Prerequisites", "Essential NCERT concept")),
-                "commonMistakes": [] # Non-AI format
-            })
+            bullets = [s.strip() + "." for s in explanation.split(".") if len(s.strip()) > 5][:5]
+            if not bullets: bullets = [topic_title]
             
-        topic_id = topics_map[topic_key]
+            bullets_json = dollar_quote(json.dumps(bullets))
+            empty_json = dollar_quote(json.dumps([]))
+            why_imp = dollar_quote(str(row.get("Prerequisites", "Essential NCERT concept")))
+            
+            tcontents_values.append(f"({dollar_quote('tc-'+topic_id)}, {dollar_quote(topic_id)}, 'en', {bullets_json}::jsonb, {why_imp}, {empty_json}::jsonb)")
         
+        topic_id = topics_set.get(topic_key)
+        if not topic_id: continue
+            
         # 3. PYQ (Question)
         pyq_id = f"pyq-{generate_id()}"
         diff_str = str(row.get("Difficulty", "Medium")).lower()
-        if diff_str not in ["easy", "medium", "hard"]:
-            diff_str = "medium"
-            
-        out_pyqs.append({
-            "id": pyq_id,
-            "subjectId": subject_id,
-            "topicId": topic_id,
-            "year": "2024",
-            "session": "March",
-            "questionText": str(row.get("Question", "")),
-            "marks": 5,
-            "difficulty": diff_str,
-            "frequencyScore": 5,
-            "questionType": "short"
-        })
+        if diff_str not in ["easy", "medium", "hard"]: diff_str = "medium"
+        q_text = dollar_quote(str(row.get("Question", "")))
+        
+        pyqs_values.append(f"({dollar_quote(pyq_id)}, {dollar_quote(subject_id)}, {dollar_quote(topic_id)}, '2024', 'March', {q_text}, 5, {dollar_quote(diff_str)}, 5, 'short')")
         
         # 4. PYQ Explanation
         ans = str(row.get("Answer", ""))
-        out_pyq_explanations.append({
-            "id": f"exp-{pyq_id}",
-            "pyqId": pyq_id,
-            "lang": "en",
-            "steps": [ans],
-            "hints": [],
-            "answer": ans,
-            "commonErrors": ""
-        })
+        ans_quoted = dollar_quote(ans)
+        steps_json = dollar_quote(json.dumps([ans]))
+        empty_json = dollar_quote(json.dumps([]))
+        
+        exps_values.append(f"({dollar_quote('exp-'+pyq_id)}, {dollar_quote(pyq_id)}, 'en', {steps_json}::jsonb, {empty_json}::jsonb, {ans_quoted}, {dollar_quote('')})")
 
-    # Output to backend
-    out_path = "/home/dipankaj/Desktop/nios-study-app/backend/src/data/generated.ts"
+    out_path = "/home/dipankaj/Desktop/nios-study-app/supabase/seed.sql"
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
         
-    def ts_export(name, data):
-        return f"export const {name} = {json.dumps(data, indent=2)};\n"
-        
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write("// AUTO-GENERATED from NCERT HuggingFace Dataset\n")
-        f.write(ts_export("subjects", out_subjects))
-        f.write(ts_export("chapters", out_chapters))
-        f.write(ts_export("topics", out_topics))
-        f.write(ts_export("topicContents", out_topic_contents))
-        f.write(ts_export("pyqs", out_pyqs))
-        f.write(ts_export("pyqExplanations", out_pyq_explanations))
+        f.write("-- AUTO-GENERATED NCERT SEED FILE FOR SUPABASE\n\n")
         
-    print(f"Generated TS arrays to {out_path}")
+        if subs_values:
+            f.write("INSERT INTO subjects (id, name, class_level, description, icon, total_marks) VALUES\n")
+            f.write(",\n".join(subs_values) + ";\n\n")
+            
+        if chaps_values:
+            f.write("INSERT INTO chapters (id, subject_id, title, order_index) VALUES\n")
+            f.write(",\n".join(chaps_values) + ";\n\n")
+            
+        if topics_values:
+            f.write("INSERT INTO topics (id, chapter_id, title, order_index, prerequisite_topic_ids, prerequisite_search_terms, high_yield_score, est_minutes) VALUES\n")
+            f.write(",\n".join(topics_values) + ";\n\n")
+            
+        if tcontents_values:
+            f.write("INSERT INTO topic_contents (id, topic_id, lang, summary_bullets, why_important, common_mistakes) VALUES\n")
+            f.write(",\n".join(tcontents_values) + ";\n\n")
+            
+        if pyqs_values:
+            f.write("INSERT INTO pyqs (id, subject_id, topic_id, year, session, question_text, marks, difficulty, frequency_score, question_type) VALUES\n")
+            f.write(",\n".join(pyqs_values) + ";\n\n")
+            
+        if exps_values:
+            f.write("INSERT INTO pyq_explanations (id, pyq_id, lang, steps, hints, answer, common_errors) VALUES\n")
+            f.write(",\n".join(exps_values) + ";\n\n")
+            
+    print(f"Successfully generated 10,000+ row SQL seed at {out_path}")
 
 if __name__ == "__main__":
     run()

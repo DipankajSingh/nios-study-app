@@ -1,75 +1,44 @@
-# root .gitignore for NIOS project
-
-# Node modules
-/node_modules/
-/web/node_modules/
-/backend/node_modules/
-
-# Build outputs
-/web/dist/
-
-# Environment files
-.env
-scripts/.env
-backend/.env
-web/.env
-
-# Wrangler state directories
-backend/.wrangler/
-
-# Logs and temporary files
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# OS-specific
+# ── General ──
 .DS_Store
 Thumbs.db
-
-# Ignore generated PDF/documentation
-*.pdf
-
-# exclude content if you prefer to regenerate (optional)
-# content/**
-
-# Sensitive and runtime files in scripts (legacy)
-scripts/credentials.json
-scripts/token.json
-scripts/__pycache__/
-scripts/venv/
-
-# Pipeline outputs (exclude intermediate processing files)
-pipeline/.env
-pipeline/**/__pycache__/
-pipeline/credentials.json
-pipeline/token.json
-pipeline/token_readonly.json
-
-# Exclude all pipeline output directories
-pipeline/output/
-# pipeline/output/raw-pdfs/          # NIOS chapter PDFs - keep  
-
-# Intermediate pipeline stage outputs (gitignored - regenerate as needed)
-pipeline/output/structured/
-pipeline/output/verified/
-pipeline/output/solved/
-pipeline/output/02_Extract-State/
-
-# Pipeline scraper outputs (generated — do not commit)
-pipeline/01_scrape/subjects_*.json
-pipeline/01_scrape/downloads_registry.json
-# Keep chapter URLs - they're needed for Kaggle extraction
-# pipeline/01_scrape/chapter_urls/
-
-
-# Pipeline test stage outputs (generated — do not commit)
-pipeline/stage-03-test/fastdup_workdir/
-pipeline/stage-03-test/cluster_review_manifest.json
-pipeline/stage-03-test/image_inventory.json
-pipeline/stage-03-test/manual_review.html
-pipeline/stage-03-test/master_image_pool/
-pipeline/stage-03-test/json/
-
-# ignore the python virtual environment if created
+*.log
+.env
+.env.local
+.env.*.local
 miniconda.sh
+get-docker.sh
+
+# ── Pipeline (Python) ──
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+pip-log.txt
+
+# ── Datasets (CRITICAL: Do not commit large extracted/downloaded data) ──
+content/
+*.parquet
+*.json.gz
+dataset_cache/
+
+# ── App (Expo / React Native) ──
+frontend/node_modules/
+frontend/.expo/
+frontend/dist/
+frontend/npm-debug.*
+frontend/yarn-debug.*
+frontend/yarn-error.*
+frontend/web-build/
+frontend/*.jks
+frontend/*.p8
+frontend/*.p12
+frontend/*.key
+frontend/*.mobileprovision
+frontend/*.orig.*
+
+# ── Backend / AI Microservice (Cloudflare/Supabase) ──
+ai-worker/node_modules/
+ai-worker/.wrangler/
+supabase/.temp/
