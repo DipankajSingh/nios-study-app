@@ -59,22 +59,6 @@ CREATE TABLE pyq_explanations (
     common_errors TEXT
 );
 
--- ── User Data (Read/Write) ──
-
-CREATE TABLE users (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    exam_date DATE,
-    daily_study_minutes INTEGER DEFAULT 60,
-    target_score TEXT DEFAULT 'pass' -- 'pass', 'sixty', 'eighty'
-);
-
-CREATE TABLE user_progress (
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
-    is_completed BOOLEAN DEFAULT FALSE,
-    last_revised_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (user_id, topic_id)
-);
 
 -- ── Search & Performance Extensions ──
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
