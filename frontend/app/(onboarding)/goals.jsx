@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Platform, Text, TouchableOpacity, View, ActivityIndicator, ScrollView } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { Platform, Text, TouchableOpacity, View, ActivityIndicator, ScrollView, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
+
+// DateTimePicker is native-only — lazy import to avoid web crash
+let DateTimePicker = null;
+if (Platform.OS !== 'web') {
+  DateTimePicker = require('@react-native-community/datetimepicker').default;
+}
 
 const TIME_OPTIONS = [
   { label: '30 min / day', value: 30 },
@@ -84,20 +89,44 @@ export default function GoalsScreen() {
 
           {/* Exam date */}
           <Text className="mt-8 mb-3 text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Exam Date (approx)</Text>
-          <TouchableOpacity
-            className="border-2 border-slate-200 dark:border-slate-700 rounded-2xl py-4 px-5"
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Text className="text-slate-900 dark:text-white font-semibold">{formattedDate}</Text>
-          </TouchableOpacity>
 
-          {showDatePicker && (
-            <DateTimePicker
-              value={examDate}
-              mode="date"
-              minimumDate={new Date()}
-              onChange={(_, date) => { setShowDatePicker(false); if (date) setExamDate(date); }}
-            />
+          {Platform.OS === 'web' ? (
+            // web-safe HTML date input
+            <View className="border-2 border-slate-200 dark:border-slate-700 rounded-2xl py-3 px-5">
+              <input
+                type="date"
+                min={new Date().toISOString().split('T')[0]}
+                value={examDate.toISOString().split('T')[0]}
+                onChange={(e) => { if (e.target.value) setExamDate(new Date(e.target.value)); }}
+                style={{
+                  width: '100%',
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  fontSize: 15,
+                  fontWeight: '600',
+                  color: 'inherit',
+                  cursor: 'pointer',
+                }}
+              />
+            </View>
+          ) : (
+            <>
+              <TouchableOpacity
+                className="border-2 border-slate-200 dark:border-slate-700 rounded-2xl py-4 px-5"
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text className="text-slate-900 dark:text-white font-semibold">{formattedDate}</Text>
+              </TouchableOpacity>
+              {showDatePicker && DateTimePicker && (
+                <DateTimePicker
+                  value={examDate}
+                  mode="date"
+                  minimumDate={new Date()}
+                  onChange={(_, date) => { setShowDatePicker(false); if (date) setExamDate(date); }}
+                />
+              )}
+            </>
           )}
 
           <View style={{ flex: 1, minHeight: 40 }} />
