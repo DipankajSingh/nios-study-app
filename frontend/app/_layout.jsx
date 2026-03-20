@@ -29,11 +29,21 @@ function AuthGate({ children }) {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inOnboarding = segments[0] === '(onboarding)';
+    const inTabs = segments[0] === '(tabs)';
 
-    if (!session && !inAuthGroup) {
-      router.replace('/(auth)/welcome');
-    } else if (session && (inAuthGroup || inOnboarding)) {
+    // If authenticated user is still in auth/onboarding screens → push to main app
+    if (session && (inAuthGroup || inOnboarding)) {
       router.replace('/(tabs)/home');
+      return;
+    }
+
+    // Unauthenticated users are allowed in:
+    //   (auth) → normal flow
+    //   (onboarding) → they chose to skip login
+    //   (tabs) → they completed onboarding without logging in
+    // Only redirect to welcome if they try to access nowhere defined (e.g. root)
+    if (!session && !inAuthGroup && !inOnboarding && !inTabs) {
+      router.replace('/(auth)/welcome');
     }
   }, [session, segments]);
 
