@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FlatList, ScrollView, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
+import { ScrollView, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -13,17 +13,14 @@ export default function LearningScreen() {
   useEffect(() => {
     async function fetchData() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) { setLoading(false); return; }
 
-      // Fetch subjects the user selected
       const { data: userSubjects } = await supabase
         .from('user_subjects')
         .select('subject_id, subjects(id, name)')
         .eq('user_id', user.id);
-
       setSubjects(userSubjects?.map((us) => us.subjects) ?? []);
 
-      // Fetch topics that need urgent review or are due today
       const today = new Date().toISOString().split('T')[0];
       const { data: due } = await supabase
         .from('user_progress')
@@ -31,7 +28,6 @@ export default function LearningScreen() {
         .eq('user_id', user.id)
         .or(`needs_urgent_review.eq.true,next_review_at.lte.${today}`)
         .limit(5);
-
       setUrgentTopics(due ?? []);
       setLoading(false);
     }
@@ -40,57 +36,65 @@ export default function LearningScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView className="flex-1 items-center justify-center bg-white dark:bg-slate-900">
+      <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }} className="bg-white dark:bg-slate-900">
         <ActivityIndicator color="#f97316" size="large" />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-white dark:bg-slate-900">
-      <ScrollView className="flex-1 px-6" contentContainerClassName="gap-5 pb-10">
-        <View className="pt-6">
-          <Text className="text-2xl font-bold text-slate-900 dark:text-white">Learning 📚</Text>
-        </View>
+    <SafeAreaView style={{ flex: 1 }} className="bg-white dark:bg-slate-900">
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }}>
+        <View className="w-full self-center px-6" style={{ maxWidth: 700 }}>
 
-        {/* Suggested revision */}
-        {urgentTopics.length > 0 && (
-          <View className="gap-3">
-            <Text className="font-semibold text-slate-700 dark:text-slate-300">📌 Suggested for you today</Text>
-            {urgentTopics.map((item) => (
-              <TouchableOpacity
-                key={item.topic_id}
-                className="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-2xl px-4 py-4 flex-row items-center justify-between"
-                onPress={() => router.push(`/topic/${item.topic_id}`)}
-              >
-                <View className="flex-1 pr-3">
-                  <Text className="text-brand-600 dark:text-brand-400 font-semibold">{item.topics?.title}</Text>
-                  {item.needs_urgent_review && (
-                    <Text className="text-red-400 text-xs mt-0.5">⚡ Urgent — failed a related PYQ</Text>
-                  )}
-                </View>
-                <Text className="text-brand-400">→</Text>
-              </TouchableOpacity>
-            ))}
+          <View className="pt-6 pb-2">
+            <Text className="text-2xl font-bold text-slate-900 dark:text-white">Learning 📚</Text>
           </View>
-        )}
 
-        {/* All selected subjects */}
-        <Text className="font-semibold text-slate-700 dark:text-slate-300">Your Subjects</Text>
-        {subjects.map((subject) => (
-          <TouchableOpacity
-            key={subject.id}
-            className="bg-slate-50 dark:bg-slate-800 rounded-2xl px-5 py-4 flex-row items-center justify-between"
-            onPress={() => router.push(`/subject/${subject.id}`)}
-          >
-            <Text className="text-base font-semibold text-slate-900 dark:text-white">{subject.name}</Text>
-            <Text className="text-slate-400">→</Text>
-          </TouchableOpacity>
-        ))}
+          {/* Suggested revision */}
+          {urgentTopics.length > 0 && (
+            <View className="gap-3 mt-4">
+              <Text className="font-semibold text-slate-700 dark:text-slate-300">📌 Suggested for you today</Text>
+              {urgentTopics.map((item) => (
+                <TouchableOpacity
+                  key={item.topic_id}
+                  className="bg-brand-50 dark:bg-slate-800 border border-brand-200 dark:border-brand-800 rounded-2xl px-4 py-4 flex-row items-center justify-between"
+                  onPress={() => router.push(`/topic/${item.topic_id}`)}
+                >
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text className="text-brand-600 dark:text-brand-400 font-semibold">{item.topics?.title}</Text>
+                    {item.needs_urgent_review && (
+                      <Text className="text-red-400 text-xs mt-0.5">⚡ Urgent — failed a related PYQ</Text>
+                    )}
+                  </View>
+                  <Text className="text-brand-400">→</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
-        {subjects.length === 0 && (
-          <Text className="text-slate-400 text-center mt-8">No subjects found. Complete onboarding first.</Text>
-        )}
+          {/* All subjects */}
+          <Text className="font-semibold text-slate-700 dark:text-slate-300 mt-6 mb-3">Your Subjects</Text>
+          {subjects.length === 0 ? (
+            <View className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-6 items-center">
+              <Text className="text-slate-400 text-center">No subjects yet. Complete onboarding first.</Text>
+            </View>
+          ) : (
+            <View className="gap-3">
+              {subjects.map((subject) => (
+                <TouchableOpacity
+                  key={subject.id}
+                  className="bg-slate-50 dark:bg-slate-800 rounded-2xl px-5 py-4 flex-row items-center justify-between"
+                  onPress={() => router.push(`/subject/${subject.id}`)}
+                >
+                  <Text className="text-base font-semibold text-slate-900 dark:text-white">{subject.name}</Text>
+                  <Text className="text-slate-400">→</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

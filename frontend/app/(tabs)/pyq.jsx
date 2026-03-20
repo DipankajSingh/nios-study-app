@@ -12,7 +12,7 @@ export default function PYQScreen() {
   useEffect(() => {
     async function fetchUserSubjects() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) { setLoading(false); return; }
       const { data } = await supabase
         .from('user_subjects')
         .select('subject_id')
@@ -25,17 +25,16 @@ export default function PYQScreen() {
   }, []);
 
   async function fetchPyqs(ids, query) {
+    if (ids.length === 0) { setLoading(false); return; }
     setLoading(true);
     let req = supabase
       .from('pyqs')
       .select('id, question_text, year, marks, difficulty, subject_id, subjects(name)')
       .in('subject_id', ids)
       .limit(30);
-
     if (query.trim().length > 2) {
       req = req.textSearch('question_text', query.trim(), { type: 'websearch' });
     }
-
     const { data } = await req;
     setPyqs(data ?? []);
     setLoading(false);
@@ -49,12 +48,12 @@ export default function PYQScreen() {
   const diffColor = { easy: 'text-green-500', medium: 'text-yellow-500', hard: 'text-red-500' };
 
   return (
-    <SafeAreaView className="flex-1 bg-white dark:bg-slate-900">
-      <View className="px-6 pt-6 gap-3">
+    <SafeAreaView style={{ flex: 1 }} className="bg-white dark:bg-slate-900">
+      {/* Header + search — responsive wrapper */}
+      <View className="w-full self-center px-6 pt-6 gap-3" style={{ maxWidth: 700 }}>
         <Text className="text-2xl font-bold text-slate-900 dark:text-white">Previous Year Q's 📝</Text>
-        {/* Full Text Search */}
         <TextInput
-          className="border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800"
+          className="border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800 text-base"
           placeholder="Search by keyword..."
           placeholderTextColor="#94a3b8"
           value={search}
@@ -63,15 +62,15 @@ export default function PYQScreen() {
       </View>
 
       {loading ? (
-        <View className="flex-1 items-center justify-center">
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color="#f97316" size="large" />
         </View>
       ) : (
         <FlatList
-          className="flex-1 mt-4"
+          style={{ flex: 1, alignSelf: 'center', width: '100%' }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 40, gap: 16, maxWidth: 700, alignSelf: 'center', width: '100%' }}
           data={pyqs}
           keyExtractor={(item) => item.id}
-          contentContainerClassName="px-6 gap-4 pb-10"
           renderItem={({ item }) => (
             <View className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 gap-2">
               <View className="flex-row items-center gap-2 flex-wrap">
@@ -90,7 +89,11 @@ export default function PYQScreen() {
             </View>
           )}
           ListEmptyComponent={
-            <Text className="text-center text-slate-400 mt-10">No PYQs found. Try a different keyword.</Text>
+            <Text className="text-center text-slate-400 mt-10">
+              {subjectIds.length === 0
+                ? 'Complete onboarding to see your PYQs.'
+                : 'No PYQs found. Try a different keyword.'}
+            </Text>
           }
         />
       )}
