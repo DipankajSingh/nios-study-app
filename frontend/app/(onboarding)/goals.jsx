@@ -49,11 +49,16 @@ export default function GoalsScreen() {
       <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
         <View className="w-full self-center px-6 flex-1" style={{ maxWidth: 520 }}>
 
-          {/* Progress: 3 of 3 */}
-          <View className="flex-row gap-2 pt-6">
-            {[1, 2, 3].map((step) => (
-              <View key={step} className="h-1 flex-1 rounded-full bg-brand-500" />
-            ))}
+          {/* Back + Progress */}
+          <View className="flex-row items-center gap-3 pt-4">
+            <TouchableOpacity onPress={() => router.back()} className="pr-2 py-1">
+              <Text className="text-brand-500 text-base">← Back</Text>
+            </TouchableOpacity>
+            <View className="flex-row gap-2 flex-1">
+              {[1, 2, 3].map((step) => (
+                <View key={step} className="h-1 flex-1 rounded-full bg-brand-500" />
+              ))}
+            </View>
           </View>
 
           <View className="pt-10 gap-2">

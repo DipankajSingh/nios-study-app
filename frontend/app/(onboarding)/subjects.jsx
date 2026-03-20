@@ -35,11 +35,16 @@ export default function SubjectsScreen() {
       <View className="w-full self-center flex-1" style={{ maxWidth: 520 }}>
 
         <View className="px-6">
-          {/* Progress: 2 of 3 */}
-          <View className="flex-row gap-2 pt-6">
-            {[1, 2, 3].map((step) => (
-              <View key={step} className={`h-1 flex-1 rounded-full ${step <= 2 ? 'bg-brand-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
-            ))}
+          {/* Back + Progress */}
+          <View className="flex-row items-center gap-3 pt-4">
+            <TouchableOpacity onPress={() => router.back()} className="pr-2 py-1">
+              <Text className="text-brand-500 text-base">← Back</Text>
+            </TouchableOpacity>
+            <View className="flex-row gap-2 flex-1">
+              {[1, 2, 3].map((step) => (
+                <View key={step} className={`h-1 flex-1 rounded-full ${step <= 2 ? 'bg-brand-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+              ))}
+            </View>
           </View>
 
           <View className="pt-10 gap-2 pb-4">
