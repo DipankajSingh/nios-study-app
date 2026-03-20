@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { Text, TouchableOpacity, View, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const CLASSES = ['10', '11', '12'];
+const CLASSES = ['11', '12'];
 
 export default function ClassScreen() {
   const router = useRouter();
