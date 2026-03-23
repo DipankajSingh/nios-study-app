@@ -41,8 +41,11 @@ function AuthGate({ children }) {
     //   (auth) → normal flow
     //   (onboarding) → they chose to skip login
     //   (tabs) → they completed onboarding without logging in
-    // Only redirect to welcome if they try to access nowhere defined (e.g. root)
-    if (!session && !inAuthGroup && !inOnboarding && !inTabs) {
+    //   subject / topic → drill-down screens reachable from (tabs)
+    const inSubject = segments[0] === 'subject';
+    const inTopic = segments[0] === 'topic';
+    const inSettings = segments[0] === '(tabs)'; // settings is inside (tabs)
+    if (!session && !inAuthGroup && !inOnboarding && !inTabs && !inSubject && !inTopic) {
       router.replace('/(auth)/welcome');
     }
   }, [session, segments]);
@@ -59,7 +62,7 @@ function AuthGate({ children }) {
 }
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const { colorScheme } = useColorScheme();
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

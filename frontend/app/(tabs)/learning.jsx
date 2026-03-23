@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ScrollView, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
 export default function LearningScreen() {
@@ -13,22 +14,38 @@ export default function LearningScreen() {
   useEffect(() => {
     async function fetchData() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoading(false); return; }
 
-      const { data: userSubjects } = await supabase
-        .from('user_subjects')
-        .select('subject_id, subjects(id, name)')
-        .eq('user_id', user.id);
-      setSubjects(userSubjects?.map((us) => us.subjects) ?? []);
+      if (user) {
+        // Logged-in: load from Supabase
+        const { data: userSubjects } = await supabase
+          .from('user_subjects')
+          .select('subject_id, subjects(id, name, icon)')
+          .eq('user_id', user.id);
+        setSubjects(userSubjects?.map((us) => us.subjects).filter(Boolean) ?? []);
 
-      const today = new Date().toISOString().split('T')[0];
-      const { data: due } = await supabase
-        .from('user_progress')
-        .select('topic_id, needs_urgent_review, next_review_at, topics(title)')
-        .eq('user_id', user.id)
-        .or(`needs_urgent_review.eq.true,next_review_at.lte.${today}`)
-        .limit(5);
-      setUrgentTopics(due ?? []);
+        const today = new Date().toISOString().split('T')[0];
+        const { data: due } = await supabase
+          .from('user_progress')
+          .select('topic_id, needs_urgent_review, next_review_at, topics(title)')
+          .eq('user_id', user.id)
+          .or(`needs_urgent_review.eq.true,next_review_at.lte.${today}`)
+          .limit(5);
+        setUrgentTopics(due ?? []);
+      } else {
+        // Anonymous: load from AsyncStorage
+        try {
+          const raw = await AsyncStorage.getItem('anon_subject_ids');
+          const ids = raw ? JSON.parse(raw) : [];
+          if (ids.length > 0) {
+            const { data } = await supabase
+              .from('subjects')
+              .select('id, name, icon')
+              .in('id', ids);
+            setSubjects(data ?? []);
+          }
+        } catch { /* ignore */ }
+      }
+
       setLoading(false);
     }
     fetchData();
@@ -87,7 +104,7 @@ export default function LearningScreen() {
                   className="bg-slate-50 dark:bg-slate-800 rounded-2xl px-5 py-4 flex-row items-center justify-between"
                   onPress={() => router.push(`/subject/${subject.id}`)}
                 >
-                  <Text className="text-base font-semibold text-slate-900 dark:text-white">{subject.name}</Text>
+                  <Text className="text-base font-semibold text-slate-900 dark:text-white">{subject.icon} {subject.name}</Text>
                   <Text className="text-slate-400">→</Text>
                 </TouchableOpacity>
               ))}

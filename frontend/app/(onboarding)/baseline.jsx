@@ -14,10 +14,26 @@ export default function BaselineScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [revealed, setRevealed] = useState(false);
+  const [finished, setFinished] = useState(false);
 
   useEffect(() => {
     async function fetchBaseline() {
-      const parsed = JSON.parse(subjectIds);
+      // subjectIds may come as a raw string like '["physics-11","chemistry-11"]'
+      // or as a plain string if only one was selected
+      let parsed = [];
+      try {
+        const raw = Array.isArray(subjectIds) ? subjectIds[0] : subjectIds;
+        parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) parsed = [parsed];
+      } catch {
+        parsed = [];
+      }
+
+      if (parsed.length === 0) {
+        setLoading(false);
+        return;
+      }
+
       const requests = parsed.map((sid) =>
         supabase
           .from('pyqs')
@@ -33,7 +49,10 @@ export default function BaselineScreen() {
     fetchBaseline();
   }, []);
 
+  // ── finish() is called as an event handler or from useEffect — NEVER during render ──
   async function finish() {
+    if (finished) return;
+    setFinished(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const insertRows = Object.entries(scores).map(([subject_id, { correct, total }]) => ({
@@ -49,25 +68,17 @@ export default function BaselineScreen() {
     router.replace('/(tabs)/home');
   }
 
-  if (loading) {
-    return (
-      <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }} className="bg-white dark:bg-slate-900">
-        <ActivityIndicator color="#f97316" size="large" />
-      </SafeAreaView>
-    );
-  }
-
-  if (questions.length === 0 || current >= questions.length) {
-    finish();
-    return null;
-  }
-
-  const q = questions[current];
-  const totalQ = questions.length;
+  // If no questions loaded (empty subjects or DB error) → skip straight to home
+  useEffect(() => {
+    if (!loading && questions.length === 0) {
+      finish();
+    }
+  }, [loading, questions.length]);
 
   function handleAnswer(answer) {
     setSelectedAnswer(answer);
     setRevealed(true);
+    const q = questions[current];
     setScores((prev) => {
       const prev_sub = prev[q.subject_id] ?? { correct: 0, total: 0 };
       return { ...prev, [q.subject_id]: { correct: prev_sub.correct, total: prev_sub.total + 1 } };
@@ -77,12 +88,23 @@ export default function BaselineScreen() {
   function next() {
     setSelectedAnswer(null);
     setRevealed(false);
-    if (current + 1 >= totalQ) {
+    if (current + 1 >= questions.length) {
       finish();
     } else {
       setCurrent((c) => c + 1);
     }
   }
+
+  if (loading || finished) {
+    return (
+      <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }} className="bg-white dark:bg-slate-900">
+        <ActivityIndicator color="#f97316" size="large" />
+      </SafeAreaView>
+    );
+  }
+
+  const q = questions[current];
+  const totalQ = questions.length;
 
   return (
     <SafeAreaView style={{ flex: 1 }} className="bg-white dark:bg-slate-900">

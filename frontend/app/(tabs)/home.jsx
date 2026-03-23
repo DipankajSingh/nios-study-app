@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, Text, View, ActivityIndicator } from 'react-native';
+import { ScrollView, Text, View, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
 export default function HomeScreen() {
+  const router = useRouter();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -53,10 +55,19 @@ export default function HomeScreen() {
                 </Text>
               )}
             </View>
-            {/* Streak badge */}
-            <View className="bg-brand-50 border border-brand-200 rounded-xl px-3 py-2 items-center">
-              <Text className="text-brand-500 font-bold text-lg">{profile?.streak_days ?? 0}🔥</Text>
-              <Text className="text-brand-400 text-xs">streak</Text>
+            <View className="flex-row items-center gap-3">
+              {/* Streak badge */}
+              <View className="bg-brand-50 border border-brand-200 rounded-xl px-3 py-2 items-center">
+                <Text className="text-brand-500 font-bold text-lg">{profile?.streak_days ?? 0}🔥</Text>
+                <Text className="text-brand-400 text-xs">streak</Text>
+              </View>
+              {/* Settings shortcut */}
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/settings')}
+                className="bg-slate-100 dark:bg-slate-800 rounded-xl w-10 h-10 items-center justify-center"
+              >
+                <Text style={{ fontSize: 18 }}>⚙️</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -84,11 +95,12 @@ export default function HomeScreen() {
           <Text className="font-semibold text-slate-700 dark:text-slate-300 mt-5 mb-3">Your Stats</Text>
           <View className="flex-row gap-3 flex-wrap">
             {[
-              { label: 'Topics Studied', value: '--' },
-              { label: 'PYQs Solved', value: '--' },
-              { label: 'Accuracy', value: '--' },
-            ].map(({ label, value }) => (
-              <View key={label} style={{ flex: 1, minWidth: 90 }} className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 items-center gap-1">
+              { label: 'Topics Studied', value: '--', emoji: '📖' },
+              { label: 'PYQs Solved', value: '--', emoji: '✍️' },
+              { label: 'Accuracy', value: '--', emoji: '🎯' },
+            ].map(({ label, value, emoji }) => (
+              <View key={label} style={{ flex: 1, minWidth: 100 }} className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 items-center gap-1">
+                <Text style={{ fontSize: 22 }}>{emoji}</Text>
                 <Text className="text-2xl font-bold text-brand-500">{value}</Text>
                 <Text className="text-xs text-slate-400 text-center">{label}</Text>
               </View>

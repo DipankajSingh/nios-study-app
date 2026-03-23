@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import { Text } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 function TabIcon({ emoji, focused }) {
@@ -8,7 +9,7 @@ function TabIcon({ emoji, focused }) {
 }
 
 export default function TabsLayout() {
-  const colorScheme = useColorScheme();
+  const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   return (
@@ -21,6 +22,9 @@ export default function TabsLayout() {
           borderTopWidth: 1,
           paddingBottom: 4,
           height: 60,
+          maxWidth: 700,
+          alignSelf: 'center',
+          width: '100%',
         },
         tabBarActiveTintColor: '#f97316',
         tabBarInactiveTintColor: isDark ? '#64748b' : '#94a3b8',
@@ -46,6 +50,13 @@ export default function TabsLayout() {
         options={{
           title: 'PYQs',
           tabBarIcon: ({ focused }) => <TabIcon emoji="📝" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="⚙️" focused={focused} />,
         }}
       />
     </Tabs>
