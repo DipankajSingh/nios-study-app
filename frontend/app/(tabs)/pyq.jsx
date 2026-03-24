@@ -103,41 +103,86 @@ export default function PYQArenaScreen() {
     const from = pageNum * PAGE_SIZE;
     const to   = from + PAGE_SIZE - 1;
 
-    let req = supabase
-      .from('pyqs')
-      .select('id, question_text, difficulty, year, marks, topic_id, subject_id')
-      .eq('subject_id', subId)
-      .order('frequency_score', { ascending: false })
-      .range(from, to);
-
-    if (q.trim().length > 2) {
-      req = req.textSearch('question_text', q.trim(), { type: 'websearch' });
-    }
-
-    const { data: rows } = await req;
-    const fetched = rows ?? [];
-
-    // Fetch attempt statuses for these PYQs (if logged in)
+    let rows = [];
     let attMap = {};
-    if (userId && fetched.length) {
-      const ids = fetched.map((r) => r.id);
-      const { data: attRows } = await supabase
-        .from('pyq_attempts')
-        .select('pyq_id, rating')
-        .eq('user_id', userId)
-        .in('pyq_id', ids);
-      for (const a of (attRows ?? [])) attMap[a.pyq_id] = a.rating;
-    }
 
-    // Apply client-side filter for Unattempted / Review / Mastered
-    let filtered = fetched;
-    if (f === 'Unattempted') filtered = fetched.filter((r) => !attMap[r.id]);
-    if (f === 'Review')      filtered = fetched.filter((r) => attMap[r.id] === 'hard');
-    if (f === 'Mastered')    filtered = fetched.filter((r) => attMap[r.id] === 'easy');
+    if ((f === 'Review' || f === 'Mastered' || f === 'Unattempted') && userId) {
+      // Server-side filter via pyq_attempts JOIN
+      const ratingFilter = f === 'Review' ? 'hard' : f === 'Mastered' ? 'easy' : null;
+
+      if (f === 'Unattempted') {
+        // Get IDs the user HAS attempted, then exclude them
+        const { data: attAll } = await supabase
+          .from('pyq_attempts')
+          .select('pyq_id, rating')
+          .eq('user_id', userId)
+          .eq('subject_id', subId);
+        const attemptedIds = (attAll ?? []).map((a) => a.pyq_id);
+        for (const a of (attAll ?? [])) attMap[a.pyq_id] = a.rating;
+
+        let req = supabase
+          .from('pyqs')
+          .select('id, question_text, difficulty, year, marks, topic_id, subject_id')
+          .eq('subject_id', subId)
+          .order('frequency_score', { ascending: false })
+          .range(from, to);
+        if (attemptedIds.length) req = req.not('id', 'in', `(${attemptedIds.join(',')})`);
+        if (q.trim().length > 2) req = req.textSearch('question_text', q.trim(), { type: 'websearch' });
+        const { data } = await req;
+        rows = data ?? [];
+      } else {
+        // Review or Mastered — fetch from pyq_attempts, then get pyq details
+        const { data: attRows } = await supabase
+          .from('pyq_attempts')
+          .select('pyq_id, rating')
+          .eq('user_id', userId)
+          .eq('subject_id', subId)
+          .eq('rating', ratingFilter)
+          .range(from, to);
+        const attemptRows = attRows ?? [];
+        for (const a of attemptRows) attMap[a.pyq_id] = a.rating;
+
+        if (attemptRows.length) {
+          const ids = attemptRows.map((a) => a.pyq_id);
+          let req = supabase
+            .from('pyqs')
+            .select('id, question_text, difficulty, year, marks, topic_id, subject_id')
+            .in('id', ids)
+            .order('frequency_score', { ascending: false });
+          if (q.trim().length > 2) req = req.textSearch('question_text', q.trim(), { type: 'websearch' });
+          const { data } = await req;
+          rows = data ?? [];
+        }
+        // hasMore based on attempt count, not pyq count
+        setHasMore(attemptRows.length === PAGE_SIZE);
+      }
+    } else {
+      // All filter (or not logged in)
+      let req = supabase
+        .from('pyqs')
+        .select('id, question_text, difficulty, year, marks, topic_id, subject_id')
+        .eq('subject_id', subId)
+        .order('frequency_score', { ascending: false })
+        .range(from, to);
+      if (q.trim().length > 2) req = req.textSearch('question_text', q.trim(), { type: 'websearch' });
+      const { data } = await req;
+      rows = data ?? [];
+
+      // Fetch attempt statuses for these PYQs
+      if (userId && rows.length) {
+        const ids = rows.map((r) => r.id);
+        const { data: attRows } = await supabase
+          .from('pyq_attempts')
+          .select('pyq_id, rating')
+          .eq('user_id', userId)
+          .in('pyq_id', ids);
+        for (const a of (attRows ?? [])) attMap[a.pyq_id] = a.rating;
+      }
+      setHasMore(rows.length === PAGE_SIZE);
+    }
 
     setAttempts((prev) => ({ ...prev, ...attMap }));
-    setPyqs((prev) => (pageNum === 0 ? filtered : [...prev, ...filtered]));
-    setHasMore(fetched.length === PAGE_SIZE);
+    setPyqs((prev) => (pageNum === 0 ? rows : [...prev, ...rows]));
     setPage(pageNum + 1);
 
     if (pageNum === 0) setLoading(false); else setLoadingMore(false);

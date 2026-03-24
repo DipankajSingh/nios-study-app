@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   ScrollView, Text, TouchableOpacity, View, ActivityIndicator,
@@ -12,26 +12,84 @@ export default function TopicScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
 
-  const [topic, setTopic] = useState(null);
+  const [topic, setTopic]     = useState(null);
   const [content, setContent] = useState(null);
-  const [pyqs, setPyqs] = useState([]);
+  const [pyqs, setPyqs]       = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Studied-today state
+  const [userId, setUserId]         = useState(null);
+  const [studiedToday, setStudied]  = useState(false);
+  const [marking, setMarking]       = useState(false);
 
   useEffect(() => {
     async function load() {
-      const [topicRes, contentRes, pyqRes] = await Promise.all([
-        supabase.from('topics').select('id, title, high_yield_score, est_minutes, chapter_id').eq('id', id).single(),
+      const [{ data: { user } }, topicRes, contentRes, pyqRes] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase.from('topics').select('id, title, high_yield_score, est_minutes, subject_id').eq('id', id).single(),
         supabase.from('topic_contents').select('summary_bullets, why_important').eq('topic_id', id).single(),
         supabase.from('pyqs').select('id, question_text, difficulty, year, marks, topic_id, subject_id').eq('topic_id', id).order('frequency_score', { ascending: false }).limit(10),
       ]);
+
+      setUserId(user?.id ?? null);
       setTopic(topicRes.data);
       setContent(contentRes.data);
       setPyqs(pyqRes.data ?? []);
+
+      // Check if already studied today
+      if (user) {
+        const today = new Date().toISOString().split('T')[0];
+        const { data: prog } = await supabase
+          .from('user_progress')
+          .select('last_studied_at')
+          .eq('user_id', user.id)
+          .eq('topic_id', id)
+          .single();
+        if (prog?.last_studied_at) {
+          setStudied(prog.last_studied_at.split('T')[0] === today);
+        }
+      }
+
       setLoading(false);
     }
     load();
   }, [id]);
 
+  const markStudied = useCallback(async () => {
+    if (!userId || marking || studiedToday) return;
+    setMarking(true);
+
+    const today = new Date().toISOString().split('T')[0];
+    const estMinutes = topic?.est_minutes ?? 5;
+
+    // 1. Upsert study_sessions — increment today's total_minutes
+    const { data: existing } = await supabase
+      .from('study_sessions')
+      .select('total_minutes')
+      .eq('user_id', userId)
+      .eq('session_date', today)
+      .single();
+
+    await supabase.from('study_sessions').upsert({
+      user_id: userId,
+      session_date: today,
+      total_minutes: (existing?.total_minutes ?? 0) + estMinutes,
+    }, { onConflict: 'user_id,session_date' });
+
+    // 2. Upsert user_progress — schedule next review in 3 days
+    const reviewDate = new Date();
+    reviewDate.setDate(reviewDate.getDate() + 3);
+    await supabase.from('user_progress').upsert({
+      user_id: userId,
+      topic_id: id,
+      last_studied_at: new Date().toISOString(),
+      next_review_at: reviewDate.toISOString().split('T')[0],
+      needs_urgent_review: false,
+    }, { onConflict: 'user_id,topic_id', ignoreDuplicates: false });
+
+    setStudied(true);
+    setMarking(false);
+  }, [userId, marking, studiedToday, id, topic]);
 
   if (loading) {
     return (
@@ -41,8 +99,8 @@ export default function TopicScreen() {
     );
   }
 
-  const bullets = content?.summary_bullets ?? [];
-  const whyImportant = content?.why_important ?? '';
+  const bullets      = content?.summary_bullets ?? [];
+  const whyImportant = content?.why_important   ?? '';
 
   return (
     <SafeAreaView style={{ flex: 1 }} className="bg-white dark:bg-slate-900">
@@ -67,6 +125,36 @@ export default function TopicScreen() {
                 <Text className="text-slate-400 text-xs">⏱ {topic?.est_minutes ?? '?'} min read</Text>
               </View>
             </View>
+          </View>
+
+          {/* ── Mark as Studied ── */}
+          <View className="mt-5">
+            {userId ? (
+              <TouchableOpacity
+                onPress={markStudied}
+                disabled={studiedToday || marking}
+                className={`py-3.5 rounded-2xl items-center flex-row justify-center gap-2 ${
+                  studiedToday
+                    ? 'bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800'
+                    : 'bg-brand-500 active:opacity-80'
+                }`}
+              >
+                {marking
+                  ? <ActivityIndicator size="small" color={studiedToday ? '#16a34a' : '#fff'} />
+                  : <Text style={{ fontSize: 16 }}>{studiedToday ? '✅' : '📖'}</Text>
+                }
+                <Text className={`font-semibold text-base ${studiedToday ? 'text-green-700 dark:text-green-400' : 'text-white'}`}>
+                  {studiedToday ? 'Studied Today' : marking ? 'Saving…' : 'Mark as Studied'}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => router.push('/(auth)/sign-in')}
+                className="py-3 rounded-2xl items-center border border-dashed border-slate-300 dark:border-slate-600"
+              >
+                <Text className="text-slate-400 text-sm">Sign in to track your progress →</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Summary bullets */}

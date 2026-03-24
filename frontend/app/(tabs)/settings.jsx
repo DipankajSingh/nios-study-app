@@ -52,6 +52,9 @@ export default function SettingsScreen() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [confirmingOut, setConfirmingOut] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   // Preferences
   const [classLevel, setClassLevel] = useState('11');
@@ -85,6 +88,7 @@ export default function SettingsScreen() {
   useEffect(() => { load(); }, [load]);
 
   async function savePrefs() {
+    setSaved(false);
     setSaving(true);
     if (user) {
       await supabase.from('user_profiles').upsert({
@@ -99,16 +103,35 @@ export default function SettingsScreen() {
       await AsyncStorage.setItem('anon_daily_minutes', String(dailyMinutes));
     }
     setSaving(false);
-    Alert.alert('Saved', 'Your preferences have been updated.');
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
   }
 
   async function handleSignOut() {
+    setSigningOut(true);
     await supabase.auth.signOut();
     await AsyncStorage.multiRemove([
       'anon_subject_ids', 'anon_exam_target', 'anon_class_level', 'anon_daily_minutes',
     ]);
-    router.replace('/(auth)/welcome');
+    // Hard navigate to clear all in-memory React auth state
+    if (typeof window !== 'undefined') {
+      window.location.href = '/welcome';
+    } else {
+      router.replace('/(auth)/welcome');
+    }
   }
+
+  function onSignOutPress() {
+    if (!confirmingOut) {
+      // First tap — ask for confirmation via state
+      setConfirmingOut(true);
+      setTimeout(() => setConfirmingOut(false), 3000); // auto-cancel after 3s
+    } else {
+      // Second tap — execute sign out
+      handleSignOut();
+    }
+  }
+
 
   if (loading) {
     return (
@@ -210,13 +233,15 @@ export default function SettingsScreen() {
 
           {/* Save preferences button */}
           <TouchableOpacity
-            className="bg-brand-500 rounded-2xl py-4 items-center mt-4 active:opacity-80"
+            className={`rounded-2xl py-4 items-center mt-4 active:opacity-80 ${saved ? 'bg-green-500' : 'bg-brand-500'}`}
             onPress={savePrefs}
-            disabled={saving}
+            disabled={saving || saved}
           >
             {saving
               ? <ActivityIndicator color="white" />
-              : <Text className="text-white text-base font-semibold">Save Preferences</Text>
+              : <Text className="text-white text-base font-semibold">
+                  {saved ? 'Saved ✓' : 'Save Preferences'}
+                </Text>
             }
           </TouchableOpacity>
 
@@ -256,15 +281,21 @@ export default function SettingsScreen() {
           <View className="gap-3">
             {user ? (
               <TouchableOpacity
-                className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-2xl py-4 items-center active:opacity-80"
-                onPress={() =>
-                  Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Sign Out', style: 'destructive', onPress: handleSignOut },
-                  ])
-                }
+                className={`border rounded-2xl py-4 items-center active:opacity-80 ${
+                  confirmingOut
+                    ? 'bg-red-500 border-red-500'
+                    : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+                }`}
+                onPress={onSignOutPress}
+                disabled={signingOut}
               >
-                <Text className="text-red-500 font-semibold text-base">Sign Out</Text>
+                {signingOut ? (
+                  <ActivityIndicator color={confirmingOut ? 'white' : '#ef4444'} />
+                ) : (
+                  <Text className={`font-semibold text-base ${confirmingOut ? 'text-white' : 'text-red-500'}`}>
+                    {confirmingOut ? 'Tap again to confirm' : 'Sign Out'}
+                  </Text>
+                )}
               </TouchableOpacity>
             ) : (
               <TouchableOpacity

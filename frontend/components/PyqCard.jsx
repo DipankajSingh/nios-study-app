@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import MathText from '@/components/MathText';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const DIFFICULTY_STYLE = {
   easy:   { label: '🟢 Easy',   cls: 'bg-green-50  border-green-200  text-green-600'  },
@@ -32,8 +33,13 @@ export default function PyqCard({ pyq, topicId, subjectId, initialAttempt = null
   const [isOpen, setIsOpen]         = useState(false);
   const [ans, setAns]               = useState(null);
   const [generatingAI, setGenAI]    = useState(false);
-  const [attempt, setAttempt]       = useState(initialAttempt); // current rating
-  const [rating, setRating]         = useState(false);          // submitting indicator
+  const [attempt, setAttempt]       = useState(initialAttempt);
+  const [rating, setRating]         = useState(false);
+
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const textColor   = isDark ? '#e2e8f0' : '#0f172a'; // slate-200 / slate-900
+  const mutedColor  = isDark ? '#94a3b8' : '#334155'; // slate-400 / slate-700
 
   const diff = DIFFICULTY_STYLE[pyq.difficulty] ?? DIFFICULTY_STYLE.medium;
   const tid  = pyq.topic_id   ?? topicId;
@@ -115,13 +121,13 @@ export default function PyqCard({ pyq, topicId, subjectId, initialAttempt = null
       {/* ── Question Row ── */}
       <View className="px-5 py-4 flex-row items-start gap-3">
         <View style={{ flex: 1 }}>
-          <MathText text={pyq.question_text} color="#0f172a" fontSize={14} />
+          <MathText text={pyq.question_text} color={textColor} fontSize={14} />
           <View className="flex-row items-center gap-2 mt-2 flex-wrap">
             <View className={`border rounded-full px-2 py-0.5 ${diff.cls}`}>
               <Text className="text-xs font-semibold">{diff.label}</Text>
             </View>
-            {pyq.year   && <Text className="text-xs text-slate-400">{pyq.year}</Text>}
-            {pyq.marks  && <Text className="text-xs text-slate-400">{pyq.marks} marks</Text>}
+            {pyq.year  && <Text className="text-xs text-slate-400">{pyq.year}</Text>}
+            {pyq.marks && pyq.marks !== 5 && <Text className="text-xs text-slate-400">{pyq.marks} marks</Text>}
             {attempt && (
               <View className={`rounded-full px-2 py-0.5 ${attemptBadge[attempt].cls}`}>
                 <Text className="text-xs font-semibold">{attemptBadge[attempt].label}</Text>
@@ -143,7 +149,7 @@ export default function PyqCard({ pyq, topicId, subjectId, initialAttempt = null
               {ans.answer && (
                 <View>
                   <Text className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Answer</Text>
-                  <MathText text={ans.answer} color="#334155" fontSize={14} />
+                  <MathText text={ans.answer} color={mutedColor} fontSize={14} />
                 </View>
               )}
 
@@ -156,7 +162,7 @@ export default function PyqCard({ pyq, topicId, subjectId, initialAttempt = null
                       <View className="w-5 h-5 rounded-full bg-brand-500 items-center justify-center mt-0.5">
                         <Text className="text-white text-xs font-bold">{i + 1}</Text>
                       </View>
-                      <MathText text={step} color="#334155" fontSize={14} className="flex-1" />
+                      <MathText text={step} color={mutedColor} fontSize={14} className="flex-1" />
                     </View>
                   ))}
                 </View>
@@ -186,7 +192,7 @@ export default function PyqCard({ pyq, topicId, subjectId, initialAttempt = null
                 <View className="bg-yellow-50 dark:bg-slate-700 rounded-xl p-3">
                   <Text className="text-xs font-semibold text-yellow-600 dark:text-yellow-400 mb-1">💡 Hints</Text>
                   {ans.hints.map((h, i) => (
-                    <MathText key={i} text={`• ${h}`} color="#a16207" fontSize={14} className="mb-0.5" />
+                    <MathText key={i} text={`• ${h}`} color={isDark ? '#fef08a' : '#a16207'} fontSize={14} className="mb-0.5" />
                   ))}
                 </View>
               )}
