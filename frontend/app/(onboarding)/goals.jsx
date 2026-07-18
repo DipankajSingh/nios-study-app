@@ -100,7 +100,7 @@ export default function GoalsScreen() {
               return (
                 <TouchableOpacity
                   key={opt.value}
-                  className={`border-2 rounded-2xl py-4 px-5 flex-row items-center justify-between ${isSelected ? 'border-brand-500 bg-brand-50' : 'border-slate-200 dark:border-slate-700'}`}
+                  className={`border-2 rounded-2xl py-4 px-5 flex-row items-center justify-between ${isSelected ? 'border-brand-500 bg-brand-50 dark:bg-slate-800' : 'border-slate-200 dark:border-slate-700'}`}
                   onPress={() => setExamTarget(opt.value)}
                 >
                   <View>
@@ -119,10 +119,10 @@ export default function GoalsScreen() {
             {TIME_OPTIONS.map((opt) => (
               <TouchableOpacity
                 key={opt.value}
-                className={`border-2 rounded-2xl py-4 px-5 ${dailyMinutes === opt.value ? 'border-brand-500 bg-brand-50' : 'border-slate-200 dark:border-slate-700'}`}
+                className={`border-2 rounded-2xl py-4 px-5 ${dailyMinutes === opt.value ? 'border-brand-500 bg-brand-50 dark:bg-slate-800' : 'border-slate-200 dark:border-slate-700'}`}
                 onPress={() => setDailyMinutes(opt.value)}
               >
-                <Text className={`font-semibold ${dailyMinutes === opt.value ? 'text-brand-600' : 'text-slate-900 dark:text-white'}`}>
+                <Text className={`font-semibold ${dailyMinutes === opt.value ? 'text-brand-600 dark:text-brand-400' : 'text-slate-900 dark:text-white'}`}>
                   {opt.label}
                 </Text>
               </TouchableOpacity>
@@ -164,7 +164,7 @@ export default function GoalsScreen() {
           <View style={{ flex: 1, minHeight: 40 }} />
 
           <TouchableOpacity
-            className={`rounded-2xl py-4 items-center mb-8 ${canContinue ? 'bg-brand-500 active:opacity-80' : 'bg-slate-200 dark:bg-slate-700'}`}
+            className={`rounded-2xl py-4 items-center mb-8 ${canContinue ? 'bg-brand-500 active:opacity-80' : 'bg-slate-200 dark:bg-slate-800'}`}
             disabled={!canContinue || saving}
             onPress={handleSave}
           >

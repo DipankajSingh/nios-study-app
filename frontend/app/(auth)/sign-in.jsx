@@ -12,19 +12,21 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   async function handleEmailSignIn() {
-    if (!email || !password) return Alert.alert('Please fill in both fields.');
+    setErrorMsg(null);
+    if (!email || !password) return setErrorMsg('Please fill in both fields.');
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
-    if (error) Alert.alert('Sign In Error', error.message);
+    if (error) setErrorMsg(error.message);
     // On success, AuthGate redirects automatically
   }
 
   async function handleGoogleSignIn() {
     // TODO: implement Supabase Google OAuth
-    Alert.alert('Coming soon', 'Google sign-in will be enabled once OAuth is configured in Supabase.');
+    setErrorMsg('Google sign-in will be enabled once OAuth is configured in Supabase.');
   }
 
   function handleSkip() {
@@ -95,6 +97,12 @@ export default function SignInScreen() {
                 value={password}
                 onChangeText={setPassword}
               />
+
+              {errorMsg && (
+                <Text className="text-red-500 bg-red-50 dark:bg-red-950 dark:text-red-400 p-3 rounded-lg mt-1 border border-red-200 dark:border-red-900">
+                  {errorMsg}
+                </Text>
+              )}
 
               <TouchableOpacity
                 className="bg-brand-500 rounded-2xl py-4 items-center mt-2 active:opacity-80"

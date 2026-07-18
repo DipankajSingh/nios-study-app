@@ -35,10 +35,10 @@ export default function ClassScreen() {
             {CLASSES.map((cls) => (
               <TouchableOpacity
                 key={cls}
-                className={`border-2 rounded-2xl py-5 items-center ${selected === cls ? 'border-brand-500 bg-brand-50' : 'border-slate-200 dark:border-slate-700'}`}
+                className={`border-2 rounded-2xl py-5 items-center ${selected === cls ? 'border-brand-500 bg-brand-50 dark:bg-slate-800' : 'border-slate-200 dark:border-slate-700'}`}
                 onPress={() => setSelected(cls)}
               >
-                <Text className={`text-xl font-semibold ${selected === cls ? 'text-brand-500' : 'text-slate-900 dark:text-white'}`}>
+                <Text className={`text-xl font-semibold ${selected === cls ? 'text-brand-600 dark:text-brand-400' : 'text-slate-900 dark:text-white'}`}>
                   Class {cls}
                 </Text>
               </TouchableOpacity>
@@ -48,7 +48,7 @@ export default function ClassScreen() {
           <View style={{ flex: 1, minHeight: 40 }} />
 
           <TouchableOpacity
-            className={`rounded-2xl py-4 items-center mb-8 ${selected ? 'bg-brand-500 active:opacity-80' : 'bg-slate-200 dark:bg-slate-700'}`}
+            className={`rounded-2xl py-4 items-center mb-8 ${selected ? 'bg-brand-500 active:opacity-80' : 'bg-slate-200 dark:bg-slate-800'}`}
             disabled={!selected}
             onPress={() => router.push({ pathname: '/(onboarding)/subjects', params: { classLevel: selected } })}
           >

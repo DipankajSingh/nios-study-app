@@ -236,6 +236,11 @@ frontend/
 - [x] **`Appearance.setColorScheme` on Web**: Not a function on web — replaced with direct DOM class toggle.
 - [x] **Dark mode not applying**: `tailwind.config.js` was missing `darkMode: 'class'`, causing NativeWind dark variants to be ignored on web.
 - [x] **Logged-in users with no DB subjects**: Added AsyncStorage fallback for signed-in users who completed anonymous onboarding before creating an account.
+- [x] **LaTeX Web Rendering**: Replaced `react-native-mathjax` (which breaks on Expo Web) with a platform fork using `react-latex-next` for MathJax/KaTeX rendering in the browser.
+- [x] **AI Generation Error Handling**: Added `aiError` state boundaries to `PyqCard.jsx` to gracefully display API/generation failures as inline UI warnings instead of unhandled console errors.
+- [x] **Auth UI Errors**: Removed broken `Alert.alert` prompts from Login/Signup screens, replacing them with standard inline red error blocks.
+- [x] **Tab Bar Layout**: Replaced rigid 60px height in `_layout.jsx` with responsive `useSafeAreaInsets` metrics to prevent TabBar overlapping on web/different devices.
+- [x] **Onboarding Theming**: Fixed hardcoded `#f0f9ff` (`bg-brand-50`) boxes in onboarding screens so they gracefully invert to `dark:bg-slate-800` during Dark Mode.
 
 ---
 

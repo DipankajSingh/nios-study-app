@@ -35,6 +35,7 @@ export default function PyqCard({ pyq, topicId, subjectId, initialAttempt = null
   const [generatingAI, setGenAI]    = useState(false);
   const [attempt, setAttempt]       = useState(initialAttempt);
   const [rating, setRating]         = useState(false);
+  const [aiError, setAiError]       = useState(null);
 
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -60,14 +61,17 @@ export default function PyqCard({ pyq, topicId, subjectId, initialAttempt = null
 
   async function generateSteps() {
     setGenAI(true);
+    setAiError(null);
     try {
       const { data, error } = await supabase.functions.invoke('generate-pyq-steps', {
         body: { pyq_id: pyq.id },
       });
       if (error) throw error;
+      if (!data || !data.steps) throw new Error("No steps returned from AI.");
       setAns((prev) => ({ ...prev, steps: data.steps, hints: data.hints }));
     } catch (e) {
       console.error('AI Error:', e);
+      setAiError(e.message || "Failed to generate AI steps. Is the API configured?");
     } finally {
       setGenAI(false);
     }
@@ -168,6 +172,12 @@ export default function PyqCard({ pyq, topicId, subjectId, initialAttempt = null
                 </View>
               ) : (
                 <View className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                  {aiError && (
+                    <View className="mb-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 rounded-xl p-3">
+                      <Text className="text-red-600 dark:text-red-400 font-semibold text-sm mb-1">AI Generation Failed</Text>
+                      <Text className="text-red-500 dark:text-red-300 text-xs">{aiError}</Text>
+                    </View>
+                  )}
                   <TouchableOpacity
                     className={`flex-row items-center justify-center gap-2 py-3 rounded-xl border ${
                       generatingAI
@@ -181,7 +191,7 @@ export default function PyqCard({ pyq, topicId, subjectId, initialAttempt = null
                       ? <ActivityIndicator size="small" color="#f97316" />
                       : <Text className="text-base">✨</Text>}
                     <Text className={`font-semibold ${generatingAI ? 'text-brand-400' : 'text-brand-600 dark:text-brand-400'}`}>
-                      {generatingAI ? 'Generating…' : 'Generate Step-by-Step Breakdown'}
+                      {generatingAI ? 'Generating…' : (aiError ? 'Try Again' : 'Generate Step-by-Step Breakdown')}
                     </Text>
                   </TouchableOpacity>
                 </View>

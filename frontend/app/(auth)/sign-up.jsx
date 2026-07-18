@@ -12,22 +12,24 @@ export default function SignUpScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   async function handleEmailSignUp() {
-    if (!email || !password) return Alert.alert('Please fill in both fields.');
-    if (password.length < 8) return Alert.alert('Password must be at least 8 characters.');
+    setErrorMsg(null);
+    if (!email || !password) return setErrorMsg('Please fill in both fields.');
+    if (password.length < 8) return setErrorMsg('Password must be at least 8 characters.');
     setLoading(true);
     const { error } = await supabase.auth.signUp({ email, password });
     setLoading(false);
     if (error) {
-      Alert.alert('Sign Up Error', error.message);
+      setErrorMsg(error.message);
     } else {
       router.replace('/(onboarding)/class');
     }
   }
 
   async function handleGoogleSignIn() {
-    Alert.alert('Coming soon', 'Google sign-in will be enabled once OAuth is configured.');
+    setErrorMsg('Google sign-in will be enabled once OAuth is configured.');
   }
 
   function handleSkip() {
@@ -98,6 +100,12 @@ export default function SignUpScreen() {
                 value={password}
                 onChangeText={setPassword}
               />
+
+              {errorMsg && (
+                <Text className="text-red-500 bg-red-50 dark:bg-red-950 dark:text-red-400 p-3 rounded-lg mt-1 border border-red-200 dark:border-red-900">
+                  {errorMsg}
+                </Text>
+              )}
 
               <TouchableOpacity
                 className="bg-brand-500 rounded-2xl py-4 items-center mt-2 active:opacity-80"

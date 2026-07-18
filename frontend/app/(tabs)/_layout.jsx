@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 function TabIcon({ emoji, focused }) {
@@ -10,6 +11,7 @@ function TabIcon({ emoji, focused }) {
 
 export default function TabsLayout() {
   const { colorScheme } = useColorScheme();
+  const insets = useSafeAreaInsets();
   const isDark = colorScheme === 'dark';
 
   return (
@@ -20,8 +22,9 @@ export default function TabsLayout() {
           backgroundColor: isDark ? '#0f172a' : '#ffffff',
           borderTopColor: isDark ? '#1e293b' : '#f1f5f9',
           borderTopWidth: 1,
-          paddingBottom: 4,
-          height: 60,
+          paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
+          paddingTop: 8,
+          height: 60 + (insets.bottom > 0 ? insets.bottom - 10 : 0),
           maxWidth: 700,
           alignSelf: 'center',
           width: '100%',
